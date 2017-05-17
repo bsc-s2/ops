@@ -1,11 +1,18 @@
 #!/usr/bin/env python2
 # coding: utf-8
 
-import inspect
-import logging
 import unittest
 
-import strutil
+from pykit import strutil
+from pykit import ututil
+
+dd = ututil.dd
+
+
+def dd_lines(lines):
+    dd()
+    for l in lines:
+        dd(l)
 
 
 class TestStrutil(unittest.TestCase):
@@ -85,9 +92,6 @@ class TestStrutil(unittest.TestCase):
 
     def test_format_line(self):
 
-        logger = logging.getLogger(
-            __name__ + '.' + self.__class__.__name__ + '.' + inspect.stack()[0][3])
-
         cases = (
                 (([], '', ''),
                  '',
@@ -130,8 +134,8 @@ class TestStrutil(unittest.TestCase):
 
             rst = strutil.format_line(*_in)
 
-            logger.debug("in: " + str(_in))
-            logger.debug("rst:\n" + rst)
+            dd("_in: " + str(_in))
+            dd("rst:\n" + rst)
 
             self.assertEqual(_out, rst,
                              ('input: {_in}, output: {_out}, expected: {rst},'
@@ -141,6 +145,125 @@ class TestStrutil(unittest.TestCase):
                                  rst=repr(rst),
                                  _mes=_mes
                              ))
+
+    def test_struct_repr(self):
+
+        inp = {
+            1: 3,
+            'x': {1: 4, 2: 5},
+            'yyy': [1, 2, 3, 1000],
+        }
+
+        rst = strutil.struct_repr(inp)
+
+        for l in rst:
+            dd(repr(l))
+
+        expected = [
+            '  1 : 3     ',
+            '  x : 1 : 4 ',
+            '      2 : 5 ',
+            'yyy : - 1   ',
+            '      - 2   ',
+            '      - 3   ',
+            '      - 1000',
+        ]
+
+        self.assertEqual(expected, rst)
+
+    def test_format_table(self):
+
+        inp = [
+            {'acl': {},
+             'bucket': 'game1.read',
+             'bucket_id': '1400000000000689036',
+             'num_used': '0',
+             'owner': 'game1',
+             'space_used': '0',
+             'ts': '1492091893065708032'},
+            {'acl': {},
+             'bucket': 'game2.read',
+             'bucket_id': '1510000000000689037',
+             'num_used': '0',
+             'owner': 'game2',
+             'space_used': '0',
+             'ts': '1492091906629786880'},
+            {'acl': {'imgx': ['READ', 'READ_ACP', 'WRITE', 'WRITE_ACP']},
+             'bucket': 'imgx-test',
+             'bucket_id': '1910000000000689048',
+             'num_used': '0',
+             'owner': 'imgx',
+             'space_used': '0',
+             'ts': '1492101189213795840'}]
+
+        # default
+        rst = strutil.format_table(inp)
+        dd_lines(rst)
+
+        # the last line is a '\n' splitted multi-row line
+        expected = [
+            'acl:               | bucket:    | bucket_id:          | num_used:  | owner:  | space_used:  | ts:                ',
+            '{}                 | game1.read | 1400000000000689036 | 0          | game1   | 0            | 1492091893065708032',
+            '{}                 | game2.read | 1510000000000689037 | 0          | game2   | 0            | 1492091906629786880',
+            'imgx : - READ      | imgx-test  | 1910000000000689048 | 0          | imgx    | 0            | 1492101189213795840\n'
+            '       - READ_ACP  |            |                     |            |         |              |                    \n'
+            '       - WRITE     |            |                     |            |         |              |                    \n'
+            '       - WRITE_ACP |            |                     |            |         |              |                    ',
+        ]
+        self.assertEqual(expected, rst)
+
+        # specify key to render
+
+        rst = strutil.format_table(inp, keys=[['bucket', 'B']])
+        dd_lines(rst)
+        expected = [
+            'B:        ',
+            'game1.read',
+            'game2.read',
+            'imgx-test ',
+        ]
+        self.assertEqual(expected, rst)
+
+        # row_sep
+        rst = strutil.format_table(inp, keys=['bucket'], row_sep='+')
+        dd_lines(rst)
+        expected = [
+            'bucket:   ',
+            '++++++++++',
+            'game1.read',
+            '++++++++++',
+            'game2.read',
+            '++++++++++',
+            'imgx-test ',
+        ]
+        self.assertEqual(expected, rst)
+
+        # sep
+        rst = strutil.format_table(
+            inp, keys=['bucket', 'bucket_id'], sep=' # ')
+        dd_lines(rst)
+        expected = [
+            'bucket:    # bucket_id:         ',
+            'game1.read # 1400000000000689036',
+            'game2.read # 1510000000000689037',
+            'imgx-test  # 1910000000000689048',
+        ]
+        self.assertEqual(expected, rst)
+
+    def test_utf8str(self):
+        cases = (
+                ('', ''),
+                ('1', '1'),
+                (1, '1'),
+                (u'我', '\xe6\x88\x91'),
+                ('\xe6\x88\x91', '\xe6\x88\x91'),
+        )
+
+        for inp, expected in cases:
+
+            rst = strutil.utf8str(inp)
+
+            self.assertEqual(expected, rst)
 
 
 class TestColoredString(unittest.TestCase):
@@ -224,7 +347,3 @@ class TestColoredString(unittest.TestCase):
         print strutil.normal('normal'),
         print strutil.optimal('optimal'),
         print
-
-
-# logging.basicConfig( stream=sys.stderr )
-# logging.getLogger( __name__ + '.TestStrutil.test_format_line' ).setLevel( logging.DEBUG )

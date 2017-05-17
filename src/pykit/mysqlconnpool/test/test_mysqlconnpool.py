@@ -7,9 +7,12 @@ import time
 import unittest
 
 import docker
-import mysqlconnpool
+import MySQLdb
 
-_DEBUG_ = True
+from pykit import mysqlconnpool
+from pykit import ututil
+
+dd = ututil.dd
 
 mysql_test_password = '123qwe'
 mysql_test_port = 3306
@@ -169,6 +172,34 @@ class Testmysqlconnpool(unittest.TestCase):
         databases = [x['Database'] for x in rst]
         self.assertTrue('mysql' in databases)
 
+    def test_query_retry(self):
+
+        pool = self.pool
+
+        sql = (
+            'set session wait_timeout=1;'
+        )
+        pool.query(sql)
+        pool.query('show variables like "%timeout%";')
+
+        with pool() as conn:
+            time.sleep(2)
+            with self.assertRaises(MySQLdb.OperationalError):
+                print conn.query('show databases')
+
+        # no error raise from above, thus a timed out conn has been left in
+        # pool
+        stat = pool('stat')
+        dd('stat after timeout', stat)
+        self.assertEqual(1, stat['create'], 'created 1 conn')
+
+        # use previous conn, timed out and retry.
+        pool.query('show databases', retry=1)
+
+        stat = pool('stat')
+        dd('stat after retry', stat)
+        self.assertEqual(2, stat['create'], 'created another conn for retry')
+
     def test_query_array_result(self):
 
         pool = self.pool
@@ -260,12 +291,3 @@ def run_shell(*args, **argkv):
     rst = [subproc.returncode, out, err]
 
     return rst
-
-
-def dd(*msg):
-    if not _DEBUG_:
-        return
-
-    for m in msg:
-        print str(m),
-    print

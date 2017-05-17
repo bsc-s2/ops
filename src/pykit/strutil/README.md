@@ -6,11 +6,14 @@
 - [Status](#status)
 - [Synopsis](#synopsis)
   - [colored string:](#colored-string)
+  - [colored command prompt:](#colored-command-prompt)
 - [Description](#description)
 - [Methods](#methods)
   - [strutil.line_pad](#strutilline_pad)
   - [strutil.format_line](#strutilformat_line)
   - [strutil.color](#strutilcolor)
+  - [strutil.struct_repr](#strutilstruct_repr)
+  - [strutil.format_table](#strutilformat_table)
 - [Author](#author)
 - [Copyright and License](#copyright-and-license)
 
@@ -75,6 +78,43 @@ blue("blue") + " and " + green("green")
 The above snippet will output colored text on a terminal:
 
 ![](res/colored-string.png)
+
+## colored command prompt:
+
+If you are going to use colored string as terminal prompt,
+the terminal prompt is not wrapping correctly with very long commands.
+You'd better tell **ColoredString** that is a prompt color string.
+
+```python
+from pykit.strutil import ColoredString
+prompt = ColoredString('colored prompt# ', color='red', prompt=True)
+```
+
+Those screenshots show this issue, the cursor is box.
+
+`prompt=False` long command:
+
+![](res/colored-false-prompt.png)
+
+`prompt=False` long command after **Home Key**:
+
+![](res/colored-false-prompt-home-key.png)
+
+`prompt=False` long command after **End Key**:
+
+![](res/colored-false-prompt-end-key.png)
+
+`prompt=True` long command:
+
+![](res/colored-true-prompt.png)
+
+`prompt=True` long command after **Home Key**:
+
+![](res/colored-true-prompt-home-key.png)
+
+`prompt=True` long command after **End Key**:
+
+![](res/colored-true-prompt-end-key.png)
 
 #   Description
 
@@ -180,6 +220,153 @@ Supported color names:
 -   `loaded` same as `green`
 -   `warn` same as `dark yellow`
 -   `danger` same as `red`
+
+##  strutil.struct_repr
+
+**syntax**:
+`strutil.struct_repr(d, key=None)`
+
+Render primitive or composite data to a structural representation string
+list.
+
+```python
+a = {
+    1: 3,
+    'x': {1:4, 2:5},
+    'l': [1, 2, 3],
+}
+for l in strutil.struct_repr(a):
+    print l
+
+# 1 : 3
+# l : - 1
+#     - 2
+#     - 3
+# x : 1 : 4
+#     2 : 5
+```
+
+**arguments**:
+
+-   `d`:
+    a number, string, list or dict to render to a structural
+    representation.
+
+-   `key`:
+    is a callable that is used to sort dict keys.
+
+    It is used in sort: `keys.sort(key=key)`.
+
+**return**:
+a list of string.
+
+##  strutil.format_table
+
+**syntax**:
+`strutil.format_table(rows, keys=None, colors=None, row_sep=None, sep=' | ')`
+
+Render a list of data into a table.
+
+Number of rows is `len(rows)`.
+Number of columns is `len(rows[0])`.
+
+
+```python
+inp = [
+    {'acl': {},
+     'bucket': 'game1.read',
+     'bucket_id': '1400000000000689036',
+     'num_used': '0',
+     'owner': 'game1',
+     'space_used': '0',
+     'ts': '1492091893065708032'},
+    {'acl': {},
+     'bucket': 'game2.read',
+     'bucket_id': '1510000000000689037',
+     'num_used': '0',
+     'owner': 'game2',
+     'space_used': '0',
+     'ts': '1492091906629786880'},
+    {'acl': {'imgx': ['READ', 'READ_ACP', 'WRITE', 'WRITE_ACP']},
+     'bucket': 'imgx-test',
+     'bucket_id': '1910000000000689048',
+     'num_used': '0',
+     'owner': 'imgx',
+     'space_used': '0',
+     'ts': '1492101189213795840'}]
+
+for l in strutil.format_table(inp, row_sep='-'):
+    print l
+
+# acl:               | bucket:    | bucket_id:          | num_used:  | owner:  | space_used:  | ts:
+# -----------------------------------------------------------------------------------------------------------------
+# {}                 | game1.read | 1400000000000689036 | 0          | game1   | 0            | 1492091893065708032
+# -----------------------------------------------------------------------------------------------------------------
+# {}                 | game2.read | 1510000000000689037 | 0          | game2   | 0            | 1492091906629786880
+# -----------------------------------------------------------------------------------------------------------------
+# imgx : - READ      | imgx-test  | 1910000000000689048 | 0          | imgx    | 0            | 1492101189213795840
+#        - READ_ACP  |            |                     |            |         |              |
+#        - WRITE     |            |                     |            |         |              |
+#        - WRITE_ACP |            |                     |            |         |              |
+
+# customize column header:
+for l in strutil.format_table(inp, keys=[['bucket', 'Bkt'],
+                                         ['num_used', 'n']]):
+    print l
+
+# Bkt:       | n:
+# game1.read | 0
+# game2.read | 0
+# imgx-test  | 0
+ ```
+
+**arguments**:
+
+-   `rows`:
+    list of items to render.
+
+    Element of list can be number, string, list or dict.
+
+-   `keys`:
+    specifies indexes(for list) or keys(for dict) to render.
+    It is a list.
+
+    Indexes or keys those are not in this list will not be rendered.
+
+    It can also be used to specify customized column headers, if element in
+    list is a 2-element tuple or list:
+
+    ```
+    keys = [
+        ('bucket', 'Bkt'),
+        ('num_used', 'n'),
+        'bucket_id',
+    ]
+    # It output a talbe like below:
+    # Bkt:       | n: | bucket_id:
+    # game1.read | 0  | ...
+    ```
+
+-   `colors`:
+    specifies the color for each column.
+    It is a list of color values in number or color name strings.
+
+    If length of `colors` is smaller than the number of columns(the number of
+    indexes of a list, or keys of a dict), the colors are repeated for columns
+    after.
+
+-   `row_sep`:
+    specifies char to separate rows.
+
+    By default it is None, it means do not add line separator.
+
+-   `sep`:
+    specifies column separator char.
+
+    By default it is `" | "`.
+
+**return**:
+a list of string.
 
 #   Author
 

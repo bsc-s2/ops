@@ -1,7 +1,9 @@
 import unittest
 
-import net
+from pykit import ututil
+from pykit import net
 
+dd = ututil.dd
 
 class TestNet(unittest.TestCase):
 
@@ -225,6 +227,8 @@ class TestNet(unittest.TestCase):
         cases = (
             ('1.2.3.4',        ['1.2.3.4']),
             ('1.2.3.4,127.0.', ['1.2.3.4', '127.0.']),
+            ('-1.2.3.4,127.0.', [('1.2.3.4', False), '127.0.']),
+            ('-1.2.3.4,-127.0.', [('1.2.3.4', False), ('127.0.', False)]),
         )
 
         for inp, outp in cases:
@@ -236,8 +240,15 @@ class TestNet(unittest.TestCase):
             ' , ',
             '1,',
             ',1',
+            '-1,',
+            ',-1',
+            '127,-',
+            '-,127',
         )
         for inp in cases_err:
+
+            dd('should fail with: ', repr(inp))
+
             try:
                 net.parse_ip_regex_str(inp)
                 self.fail('should fail with ' + repr(inp))
@@ -257,7 +268,21 @@ class TestNet(unittest.TestCase):
 
             (['127.0.0.1', '192.168.0.1'], ['1'],
              ['127.0.0.1', '192.168.0.1']),
+
+            # negative match
+            (['127.0.0.1', '192.168.0.1'], [('1', False)],
+             []),
+
+            (['127.0.0.1', '192.168.0.1'], [('127', False), ('192', False)],
+             []),
+
+            (['127.0.0.1', '192.168.0.1'], [('12', False)],
+             ['192.168.0.1']),
+
+            (['127.0.0.1', '192.168.0.1'], ['22', ('12', False)],
+             []),
         )
 
         for ips, regs, outp in cases:
+            dd('case: ', ips, regs, outp)
             self.assertEqual(outp, net.choose_by_regex(ips, regs))

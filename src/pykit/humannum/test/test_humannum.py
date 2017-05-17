@@ -1,9 +1,9 @@
-#!/usr/bin/env python2
-# coding: utf-8
-
 import unittest
 
-import humannum
+from pykit import humannum
+from pykit import ututil
+
+dd = ututil.dd
 
 
 class TestHumannum(unittest.TestCase):
@@ -38,18 +38,18 @@ class TestHumannum(unittest.TestCase):
                 (True,                    True,    ''),
         )
 
-        for _in, _out, _mes in cases:
+        for _in, _out, _msg in cases:
 
             rst = humannum.humannum(_in)
 
-            mes = 'humanize: in: {_in} expect: {_out}, rst: {rst}; {_mes}'.format(
+            msg = 'humanize: in: {_in} expect: {_out}, rst: {rst}; {_msg}'.format(
                 _in=repr(_in),
                 _out=repr(_out),
                 rst=rst,
-                _mes=_mes
+                _msg=_msg
             )
 
-            self.assertEqual(_out, rst, mes)
+            self.assertEqual(_out, rst, msg)
 
     def test_parse_number(self):
 
@@ -77,27 +77,30 @@ class TestHumannum(unittest.TestCase):
                 ('1.00M',     1048576,       ''),
         )
 
-        for _in, _out, _mes in cases:
+        suffixes = (
+            '',
+            'b', 'i', 'ib',
+            'B', 'I', 'iB',
+        )
+
+        for _in, _out, _msg in cases:
 
             rst = humannum.parsenum(_in)
 
-            mes = 'parse: in: {_in} expect: {_out}, rst: {rst}; {_mes}'.format(
+            msg = 'parse: in: {_in} expect: {_out}, rst: {rst}; {_msg}'.format(
                 _in=repr(_in),
                 _out=repr(_out),
                 rst=rst,
-                _mes=_mes
+                _msg=_msg
             )
 
-            self.assertEqual(_out, rst, mes)
+            self.assertEqual(_out, rst, msg)
 
-            self.assertEqual(int(_out), humannum.parseint(_in),
-                             mes + '; parseint')
+            for suff in suffixes:
 
-            self.assertEqual(int(_out), humannum.parseint(_in + 'B'),
-                             mes + '; parseint and suffix "B"')
-
-            self.assertEqual(int(_out), humannum.parseint(_in + 'i'),
-                             mes + '; parseint and suffix "i"')
+                dd('parseint:', _in, ' suffix: ', suff)
+                self.assertEqual(int(_out), humannum.parseint(_in + suff),
+                                 msg + '; parseint with suffix: ' + repr(suff))
 
     def test_specified_unit(self):
 
@@ -106,18 +109,18 @@ class TestHumannum(unittest.TestCase):
                 ((1024 ** 2, {'unit': 1024**3}),   '0.001G',  ''),
         )
 
-        for _in, _out, _mes in cases:
+        for _in, _out, _msg in cases:
 
             rst = humannum.humannum(_in[0], **_in[1])
 
-            mes = 'in: {_in} expect: {_out}, rst: {rst}; {_mes}'.format(
+            msg = 'in: {_in} expect: {_out}, rst: {rst}; {_msg}'.format(
                 _in=repr(_in),
                 _out=repr(_out),
                 rst=rst,
-                _mes=_mes
+                _msg=_msg
             )
 
-            self.assertEqual(_out, rst, mes)
+            self.assertEqual(_out, rst, msg)
 
     def test_non_primitive(self):
 
@@ -127,18 +130,18 @@ class TestHumannum(unittest.TestCase):
                 ([{'a': 'xp'},  1024432],   [{'a': 'xp'}, '1000.4K'], ''),
         )
 
-        for _in, _out, _mes in cases:
+        for _in, _out, _msg in cases:
 
             rst = humannum.humannum(_in)
 
-            mes = 'in: {_in} expect: {_out}, rst: {rst}; {_mes}'.format(
+            msg = 'in: {_in} expect: {_out}, rst: {rst}; {_msg}'.format(
                 _in=repr(_in),
                 _out=repr(_out),
                 rst=rst,
-                _mes=_mes
+                _msg=_msg
             )
 
-            self.assertEqual(_out, rst, mes)
+            self.assertEqual(_out, rst, msg)
             self.assertTrue(_in is not rst, 'result must not be input')
 
     def test_limit_keys(self):
@@ -154,16 +157,45 @@ class TestHumannum(unittest.TestCase):
                  ),
         )
 
-        for _in, _out, _mes in cases:
+        for _in, _out, _msg in cases:
 
             rst = humannum.humannum(_in[0], **_in[1])
 
-            mes = 'in: {_in} expect: {_out}, rst: {rst}; {_mes}'.format(
+            msg = 'in: {_in} expect: {_out}, rst: {rst}; {_msg}'.format(
                 _in=repr(_in),
                 _out=repr(_out),
                 rst=rst,
-                _mes=_mes
+                _msg=_msg
             )
 
-            self.assertEqual(_out, rst, mes)
+            self.assertEqual(_out, rst, msg)
             self.assertTrue(_in is not rst, 'result must not be input')
+
+    def test_unit(self):
+
+        self.assertEqual('', humannum.value_to_unit[1])
+
+        cases = (
+                (1024**1, 'K'),
+                (1024**2, 'M'),
+                (1024**3, 'G'),
+                (1024**4, 'T'),
+                (1024**5, 'P'),
+                (1024**6, 'E'),
+                (1024**7, 'Z'),
+                (1024**8, 'Y'),
+        )
+
+        for inp, expected in cases:
+
+            rst = humannum.value_to_unit[inp]
+            self.assertEqual(expected, rst)
+
+            rst = humannum.unit_to_value[expected]
+            self.assertEqual(inp, rst)
+
+            with self.assertRaises(KeyError):
+                humannum.value_to_unit[inp + 1]
+
+            with self.assertRaises(KeyError):
+                humannum.value_to_unit[inp - 1]

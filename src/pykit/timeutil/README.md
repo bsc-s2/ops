@@ -9,15 +9,18 @@
 - [Methods](#methods)
   - [timeutil.parse](#timeutilparse)
   - [timeutil.format](#timeutilformat)
-  - [timeutil.format_ts](#timeutilformatts)
-  - [timeutil.utc_datetime_to_ts](#timeutilutcdatetime_to_ts)
+  - [timeutil.format_ts](#timeutilformat_ts)
+  - [timeutil.utc_datetime_to_ts](#timeutilutc_datetime_to_ts)
   - [timeutil.ts_to_datetime](#timeutilts_to_datetime)
   - [timeutil.ts](#timeutilts)
   - [timeutil.ms](#timeutilms)
   - [timeutil.us](#timeutilus)
+  - [timeutil.ns](#timeutilns)
   - [timeutil.ms_to_ts](#timeutilms_to_ts)
   - [timeutil.us_to_ts](#timeutilus_to_ts)
-
+  - [timeutil.ns_to_ts](#timeutilns_to_ts)
+  - [timeutil.to_sec](#timeutilto_sec)
+  - [timeutil.is_timestamp](#timeutilis_timestamp)
 - [Author](#author)
 - [Copyright and License](#copyright-and-license)
 
@@ -46,7 +49,7 @@ ts = timeutil.utc_datetime_to_ts(dt)
 
 print ts, time_str
 
-print timeutil.ts(), timeutil.ms(), timeutil.us()
+print timeutil.ts(), timeutil.ms(), timeutil.us(), timeutil.ns()
 
 ```
 
@@ -67,15 +70,29 @@ parse time string to datetime instance.
 **arguments**:
 
 -   `time_str`:
-    time_str format, please refer to timeutil.formats, for example:
-    'Tue, 24 Jan 2017 07:51:59 UTC', '2017-01-24T07:51:59.000Z'
+    time in string. Please refer to timeutil.formats, for example:
+    `'Tue, 24 Jan 2017 07:51:59 UTC'`, `'2017-01-24T07:51:59.000Z'`.
 
--   `fmt_key`
-    specify time string format type,
-    value: default, iso, utc, archive, compact, daily, mysql, nginxaccesslog, nginxerrorlog
+-   `fmt_key`:
+    specify time string format.
+    It can be a named format alias, or format string:
+
+    ```
+    'default':        '%a, %d %b %Y %H:%M:%S UTC',
+    'iso':            '%Y-%m-%dT%H:%M:%S.000Z',
+    'utc':            '%a, %d %b %Y %H:%M:%S UTC',
+    'archive':        '%Y%m%d-%H',
+    'compact':        '%Y%m%d-%H%M%S',
+    'daily':          '%Y-%m-%d',
+    'mysql':          '%Y-%m-%d %H:%M:%S',
+    'nginxaccesslog': "%d/%b/%Y:%H:%M:%S",
+    'nginxerrorlog':  "%Y/%m/%d %H:%M:%S",
+    ```
+
+    Thus `parse(tm, "default")` is same as `parse(tm, "%a, %d %b %Y %H:%M:%S UTC")`.
 
 **return**:
-    datetime instance
+datetime instance
 
 ##  timeutil.format
 
@@ -91,8 +108,8 @@ convert datetime instance to specify format time string
     datetime instance
 
 -   `fmt_key`:
-    specify time string format type,
-    value: default, iso, utc, archive, compact, daily, mysql, nginxaccesslog, nginxerrorlog
+    specify time string format.
+    It can be a named format alias, or format string.
 
 **return**:
     specify format time string
@@ -111,8 +128,8 @@ convert timestamp to specify format time string
     timestamp in second
 
 -   `fmt_key`:
-    specify time string format type,
-    value: default, iso, utc, archive, compact, daily, mysql, nginxaccesslog, nginxerrorlog
+    specify time string format.
+    It can be a named format alias, or format string.
 
 **return**:
     specify format time string
@@ -183,6 +200,17 @@ get now timestamp in microsecond
 **return**:
     timestamp in microsecond
 
+##  timeutil.ns
+
+**syntax**:
+
+`ns()`
+
+get now timestamp in nanosecond
+
+**return**:
+    timestamp in nanosecond
+
 ##  timeutil.ms_to_ts
 
 **syntax**:
@@ -214,6 +242,64 @@ convert timestamp from microsecond to second
 
 **return**:
     timestamp in second
+
+##  timeutil.ns_to_ts
+
+**syntax**:
+
+`ns_to_ts(ns)`
+
+convert timestamp from nanosecond to second
+
+**arguments**:
+
+-   `ns`:
+    timestamp in nanosecond
+
+**return**:
+    timestamp in second
+
+##  timeutil.to_sec
+
+**syntax**:
+`timeutil.to_sec(val)`
+
+Convert timestamp in second, ms, us or ns to second.
+If `val` is not a valid timestamp, it raises `ValueError`.
+
+**arguments**:
+
+-   `val`: timestamp in int, long, float or string.
+    It can be a timestamp in second, millisecond(10e-3), microsecond(10e-6) or
+    nanosecond(10e-9).
+
+**return**:
+timestamp in second
+
+##  timeutil.is_timestamp
+
+**syntax**:
+`timeutil.is_timestamp(ts, unit=None)`
+
+It check if `ts` is a valid timestamp, in string or number.
+
+**arguments**:
+
+-   `ts`:
+    is string or number.
+
+-   `unit`:
+    specifies what the unit `ts` is in:
+
+    -   `s`:     second
+    -   `ms`:    millisecond `10^-3`
+    -   `us`:    microsecond `10^-6`
+    -   `ns`:    nanosecond  `10^-9`
+
+    -   `None`:  any of above
+
+**return**:
+`True` or `False`.
 
 # Author
 

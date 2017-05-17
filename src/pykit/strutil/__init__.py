@@ -5,6 +5,9 @@ from .strutil import (
 
     ColoredString,
     colorize,
+    struct_repr,
+    format_table,
+    utf8str,
 )
 
 from .strutil import (
@@ -48,4 +51,8 @@ __all__ = [
     'danger',
 
     'fading_color',
+
+    'struct_repr',
+    'format_table',
+    'utf8str',
 ]
