@@ -12,20 +12,29 @@ Configure file ".gitsubrepo" syntax:
     # set base of remote url to "https://github.com/"
     [ remote: https://github.com/ ]
 
+
     # set base of local dir to "plugin"
     [ base: plugin ]
 
-    # <local dir>   <remote uri>            <ref to fetch>
-    gutter          airblade/vim-gitgutter  master
+
+    # <local dir>   <remote uri>            <ref to fetch>    [<dir>]
+    gutter          airblade/vim-gitgutter  master            src
+
 
     # if <remote uri> ends with "/", <local dir> will be added after "/"
     ansible-vim     DavidWittman/           master
 
+
     # change base to "root"
     [ base: ]
 
+
     # use a specific commit 1a2b3c4
     ultisnips       SirVer/                 1a2b3c4
+
+
+    # add a sub-directory
+    ultisnips       SirVer/                 1a2b3c4           src
 ```
 
 With above config, "git subrepo" will:
