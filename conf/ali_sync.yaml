@@ -1,0 +1,47 @@
+ALI_ACCESS_KEY: 'ali access key'
+ALI_SECRET_KEY: 'ali secret key'
+ALI_BUCKET_NAME: 'ali-test-bucket'
+ALI_ENDPOINT: 'oss-cn-qingdao.aliyuncs.com'
+
+
+BAISHAN_ACCESS_KEY: 'baishan access key'
+BAISHAN_SECRET_KEY: 'baishan secret key'
+BAISHAN_BUCKET_NAME: 'baishan-test-bucket'
+BAISHAN_ENDPOINT: 'http://s2.i.qingcdn.com'
+
+# 只同步包含特定前缀的文件
+PREFIX: ''
+
+
+START_MARKER: null
+
+END_MARKER: null
+
+# 设置文件的权限
+FILE_ACL: 'private'
+
+PROGRESS_FILE: 'progress.json'
+
+# 设置是否查看需要同步的文件已经存在，如果是，且文件存在，则不再同步此文件
+CHECK_EXIST: true
+
+# 设置当文件已存在时，是否强制覆盖文件，如果否，则当文件大小或文件类型不一致时才会覆盖
+FORCE_OVERRIDE: false
+
+# 设置多少个线程同时添加离线任务
+THREADS_NUM_FOR_ADD_OFFLINE_TASK: 20
+
+# 设置多少个线程同时比较文件
+THREADS_NUM_FOR_COMPARE_FILE: 20
+
+# 比较文件类型的时候是否区分大小写
+CONTENT_TYPE_CASE_SENSITIVE: true
+
+# 日志存放目录，日志文件命名规则：ali-sync-for-<ali bucket name>.log
+LOG_DIR: '/tmp/ali-sync'
+
+REPORT_INTERVAL: 1
+
+OVERRIDE: false
+
+STATE_FILE: 'state.json'

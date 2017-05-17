@@ -1,0 +1,24 @@
+#!/bin/sh
+
+git_diff_ln_new()
+{
+    # output changed line number of a file: <from> <end>; inclusive:
+    # 27 28
+    # 307 309
+    # 350 350
+
+    git diff -U0 "$@" \
+        | grep '^@@' \
+        | awk '{
+    l=$3
+    gsub("^+", "", l)
+    split(l",1", x, ",")
+
+    # inclusive
+    x[2]=x[1]+x[2]-1
+
+    print x[1] " " x[2]
+}'
+}
+
+git_diff_ln_new "$@"

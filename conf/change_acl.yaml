@@ -1,0 +1,69 @@
+ACCESS_KEY: 'ziw5dp1alvty9n47qksu'
+SECRET_KEY: 'V+ZTZ5u5wNvXb+KP5g0dMNzhMeWe372/yRKx4hZV'
+BUCKET_NAME: 'renzhi-test-bucket'
+
+ENDPOINT: 'http://s2.i.qingcdn.com'
+
+# 只修改包含特定前缀的文件的ACL
+PREFIX: ''
+
+# 设置最多修改多少个文件的ACL，如果设置为null，表示不限制个数
+NUM_LIMIT: null
+
+# 设置从哪个文件以后开始修改ACL，（不包含）
+START_MARKER: ''
+
+# 设置修改到哪个文件结束，（不包含）
+END_MARKER: null
+
+# 设置操作类型，可设置为：'set' 或 'grant' 或 'revoke'
+# 'set': 将文件的ACL设置为指定的ACL,操作完成后文件的ACL将与配置的ACL完全一样
+# 'grant': 添加新的授权，操作完成后文件的ACL为旧的ACL加上配置的ACL
+# 'revoke': 收回指定的权限，操作完成后文件的ACL为旧的ACL去掉配置的ACL后的内容
+OPERATION_TYPE: 'grant'
+
+# 需要set, grant, revoke 的ACL
+# 分为'GROUP', 'USER_NAME', 'USER_EMAIL'三类
+# 其中‘GROUP'中只能包含’all', 'authenticated', 'log_delivery'这三种授权对象。
+# 'USER_NAME'中的用户名必须是真实存在的用户
+# 'USER_EMAIL'中的邮件地址和'USER_NAME'中的用户名是一一对应的，可根据方便程度任意选择,但是
+# 当OPERATION_TYPE为'revoke'时，不能使用'USER_EMAIL'
+# 授权的权限为一个列表，可包含‘READ’，‘WRITE’，‘READ_ACP’，‘WRITE_ACP'， ’FULL_CONTROL'
+ACL:
+    GROUP:
+        all:
+            - 'READ'
+
+        authenticated:
+            - 'READ'
+            - 'WRITE'
+
+        log_delivery:
+            - 'READ'
+
+    USER_NAME:
+        renzhi_test:
+            - 'FULL_CONTROL'
+
+    USER_EMAIL:
+        someone@some.com:
+            - 'READ'
+
+# 设置多少个线程同时修改ACL
+THREADS_NUM_FOR_CHANGE_ACL: 10
+
+# 日志存放目录，日志文件命名规则：change-acl-log-for-<bucket name>.log
+LOG_DIR: '/tmp/change_acl_log_dir'
+
+# 汇报已经修改的文件个数等信息的时间间隔, 单位秒
+REPORT_INTERVAL: 10
+
+# 是否永久运行, 或者只运行一次
+RUN_FOREVER: false
+
+# 是否启用 schedule功能，指定程序在某个时间段运行
+ENABLE_SCHEDULE: false
+
+# 程序运行的时间点
+SCHEDULE_START: '23:25'
+SCHEDULE_STOP: '2:30'

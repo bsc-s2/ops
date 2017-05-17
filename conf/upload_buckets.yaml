@@ -1,0 +1,49 @@
+ENDPOINT_URL: 'http://s2.i.qingcdn.com'
+ACCESS_KEY: 'input_access_key'
+SECRET_KEY: 'input_secret_key'
+KEY_PREFIX: ''
+FILE_ACL: 'public-read'
+
+# 上传文件的目录，该目录不加入key的前缀
+DATA_DIRS:
+    - '/root/upload_directory'
+    - '/root/upload_directory1'
+
+# 日志目录，自动生成以upload-log 和 upload-progress 前缀的文件
+LOG_DIR: '/tmp/upload_directory'
+
+# Cache目录，保存文件上传进度，用于检查新文件
+CACHE_DIR: '/tmp/cache_directory'
+
+# 已经上传的文件是否从目录清除掉
+CLEAR_FILES: true
+
+# 处理目录的并发线程数
+THREADS_NUM_FOR_DIR: 5
+
+# 处理目录下的文件的并发线程数
+THREADS_NUM_FOR_FILE: 4
+
+# 是否启用 带宽限制功能
+ENABLE_BANDWIDTH: true
+
+# 限制上传的带宽使用，单位Mb
+BANDWIDTH: 1024
+
+# 汇报上传总量等信息的时间间隔, 单位秒
+REPORT_INTERVAL: 30
+
+# 是否永久运行, 或者只运行一次
+RUN_FOREVER: true
+
+# 是否启用 schedule功能，指定程序在某个时间段运行
+ENABLE_SCHEDULE: false
+
+# 程序运行的时间点
+SCHEDULE_START: '01:25'
+SCHEDULE_STOP: '23:30'
+
+# 一级目录对应的bucket名字
+BUCKET_MAP:
+    "UPPER": 'upper'
+    "with_underline": 'with.underline'

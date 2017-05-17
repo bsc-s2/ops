@@ -1,0 +1,46 @@
+QINIU_ACCESS_KEY: 'qiniu access key'
+QINIU_SECRET_KEY: 'qiniu secret key'
+QINIU_BUCKET_NAME: 'qiniu bucket name'
+QINIU_BUCKET_DOMAIN: 'qiniu bucket domain'
+
+
+BAISHAN_ACCESS_KEY: 'ziw5dp1alvty9n47qksu'
+BAISHAN_SECRET_KEY: 'V+ZTZ5u5wNvXb+KP5g0dMNzhMeWe372/yRKx4hZV'
+BAISHAN_BUCKET_NAME: 'renzhi-test-bucket'
+BAISHAN_ENDPOINT: 'http://s2.i.qingcdn.com'
+BAISHAN_OFFLINE_ENDPOINT: 'http://s2.offline.qingcdn.com'
+
+# 只同步包含特定前缀的文件
+PREFIX: ''
+
+# 设置列七牛bucket文件时使用的marker
+MARKER: null
+
+# 存放文件列表的目录
+FILE_BUNDLE_DIR: 'file_bundles'
+
+# 每个文件列表最多包含多少个文件
+FILE_BUNDLE_SIZE: 10000
+
+# 设置文件的权限
+FILE_ACL: 'private'
+
+# 设置是否查看需要同步的文件已经存在，如果是，且文件存在，则不再同步此文件
+CHECK_EXIST: true
+
+# 设置当文件已存在时，是否强制覆盖文件，如果否，则当文件大小或文件类型不一致时才会覆盖
+FORCE_OVERRIDE: false
+
+# 设置多少个线程同时添加离线任务
+THREADS_NUM_FOR_ADD_OFFLINE_TASK: 20
+
+# 设置多少个线程同时比较文件
+THREADS_NUM_FOR_COMPARE_FILE: 20
+
+# 比较文件类型的时候是否区分大小写
+CONTENT_TYPE_CASE_SENSITIVE: true
+
+# 日志存放目录，日志文件命名规则：qiniu-sync-offline-for-<qiniu bucket name>.log
+LOG_DIR: '/tmp/qiniu-sync-offlie'
+
+

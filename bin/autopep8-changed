@@ -1,0 +1,57 @@
+#!/bin/sh
+
+# format python source codes with autopep8 on changed lines.
+#
+# # format modified(not staged)
+#   git diff --name-only --relative HEAD | autopep8-changed
+#
+# # format staged:
+#   git diff --name-only --relative HEAD | autopep8-changed --cached
+#
+# ---
+# # Explaination:
+#
+# # show all changed file names:
+#   git diff --name-only --relative HEAD
+#
+# And a helper script `git-changed-ln` outputs changed line numbers,
+# by diff work-tree(unstaged) with HEAD,
+# or by diff index(staged or cached) with HEAD.
+
+cmd_reverse=tac
+which -s $cmd_reverse || cmd_reverse="tail -r"
+
+git_diff_ln_new()
+{
+    # output changed line number of a file: <from> <end>; inclusive:
+    # 27 28
+    # 307 309
+    # 350 350
+
+    git diff -U0 "$@" \
+        | grep '^@@' \
+        | awk '{
+    l=$3
+    gsub("^+", "", l)
+    split(l",1", x, ",")
+
+    # inclusive
+    x[2]=x[1]+x[2]-1
+
+    print x[1] " " x[2]
+}'
+}
+
+{
+    cat
+} | while read fn; do
+
+    # reverse order, autopep8 may add or remove lines
+
+    git-changed-ln "$@" $fn \
+        | $cmd_reverse \
+        | while read f t; do
+            autopep8 -i --line-range $f $t $fn
+        done
+done
+

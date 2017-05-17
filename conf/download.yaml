@@ -1,0 +1,55 @@
+ACCESS_KEY: 'ziw5dp1alvty9n47qksu'
+SECRET_KEY: 'V+ZTZ5u5wNvXb+KP5g0dMNzhMeWe372/yRKx4hZV'
+BUCKET_NAME: 'renzhi-test-bucket'
+
+
+ENDPOINT: 'http://s2.i.qingcdn.com'
+
+# 只下载包含特定前缀的文件
+PREFIX: ''
+
+# 设置最多下载多少个文件，如果设置为null，表示不限制个数
+NUM_LIMIT: null
+
+# 设置从哪个文件以后开始下载，（不包含）
+START_MARKER: ''
+
+# 设置下载到哪个文件结束，（不包含）
+END_MARKER: null
+
+# 是否将文件都放到同一个目录下，如果是，文件名中的'/'将被替换为PATH_DELIMITER指定的内容
+PLAIN_DIRECTORY: false
+
+# 设置多少个线程同时下载
+THREADS_NUM_FOR_DOWNLOAD: 10
+
+# 是否使用完整的文件名作为本地文件名，如果否，将会去掉PREFIX
+USE_FULL_NAME: true
+
+# 用于在必要时替换文件名中的'/'
+PATH_DELIMITER: '%2F'
+
+# 设置所在时区提前的秒数，如北京会提前8小时（28800秒）
+TIME_ZONE: 28800
+
+# 下载文件存放的目录
+DOWNLOAD_BASE_DIR: '/root/download_directory'
+
+# 日志存放目录，日志文件命名规则：download-log-for-<bucket name>.log
+LOG_DIR: '/tmp/download_directory'
+
+# 限制下载的带宽使用，单位MB
+BANDWIDTH: 5
+
+# 汇报下载总量等信息的时间间隔, 单位秒
+REPORT_INTERVAL: 10
+
+# 是否永久运行, 或者只运行一次
+RUN_FOREVER: false
+
+# 是否启用 schedule功能，指定程序在某个时间段运行
+ENABLE_SCHEDULE: false
+
+# 程序运行的时间点
+SCHEDULE_START: '23:25'
+SCHEDULE_STOP: '2:30'
