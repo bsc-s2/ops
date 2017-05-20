@@ -1,11 +1,12 @@
 #!/usr/bin/env python2
+    #http = s2http.Http('s2.i.qingcdn.com', 80)
 # coding: utf-8
 
 import time
 import random
 import threading
 
-import s2http
+from pykit import http
 
 class UploadError(Exception): pass
 class DeleteError(Exception): pass
@@ -18,38 +19,37 @@ hosts = ['127.0.0.1']
 def upload_file(bucket, key):
 
     idx = random.randint(1, 10000)%len(hosts)
-    http = s2http.Http(hosts[idx], 80)
+    h = http.Client(hosts[idx], 80)
 
-    http.send_request('/'+bucket+'/'+key, 'PUT', headers = {'x-amz-acl': 'public-read', 'Content-Length': len(data), 'Host': 's2.i.qingcdn.com'} )
-    http.send_body(data)
+    h.send_request('/'+bucket+'/'+key, 'PUT', headers = {'x-amz-acl': 'public-read', 'Content-Length': len(data), 'Host': 's2.i.qingcdn.com'} )
+    h.send_body(data)
 
-    http.finish_request()
+    h.read_response()
 
-    if http.status != 200:
-        raise UploadError( 'Put File Code: ' + str(http.status) + http.read_body(1024 * 1024) )
+    if h.status != 200:
+        raise UploadError( 'Put File Code: ' + str(h.status) + h.read_body(1024 * 1024) )
 
 
 def get_file(bucket, key):
 
     idx = random.randint(1, 1000)%len(hosts)
-    http = s2http.Http(hosts[idx], 80)
+    h = http.Client(hosts[idx], 80)
 
-    http.request('/'+bucket+'/'+key, 'GET')
+    h.request('/'+bucket+'/'+key, 'GET')
 
-    if http.status != 200:
-        raise GetError('GET File Code: ' + str(http.status))
+    if h.status != 200:
+        raise GetError('GET File Code: ' + str(h.status))
 
-    http.read_body(50*1024*1024)
+    h.read_body(50*1024*1024)
 
 def delete_file(bucket, key):
 
     idx = random.randint(1,10000)%len(hosts)
-    http = s2http.Http(hosts[idx], 80)
-    #http = s2http.Http('s2.i.qingcdn.com', 80)
-    http.request('/'+bucket+'/'+key, 'DELETE')
+    h = http.Client(hosts[idx], 80)
+    h.request('/'+bucket+'/'+key, 'DELETE')
 
-    if http.status != 204:
-        raise DeleteError( 'Delete File Code: ' + str(http.status) )
+    if h.status != 204:
+        raise DeleteError( 'Delete File Code: ' + str(h.status) )
 
 def run():
 
