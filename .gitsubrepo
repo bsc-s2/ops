@@ -1,8 +1,4 @@
 [ remote: https://github.com/ ]
-[ base: bin ]
 
-git-subrepo             baishancloud/                           master
-
-[ base: src ]
-
-pykit                   baishancloud/                           master
+bin/git-subrepo             baishancloud/git-subrepo        master      git-subrepo
+src/pykit                   baishancloud/pykit              master
