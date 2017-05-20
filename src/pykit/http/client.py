@@ -65,8 +65,7 @@ class Client(object):
 
         self.send_request(uri, method=method, headers=headers)
 
-        self.read_status()
-        self.read_headers()
+        self.read_response()
 
     def send_request(self, uri, method='GET', headers={}):
 
@@ -136,12 +135,12 @@ class Client(object):
 
         if self.status in (204, 304) or self.method == 'HEAD':
             self.content_length = 0
-            return
+            return self.headers
 
         code = self.headers.get('transfer-encoding', '')
         if code.lower() == 'chunked':
             self.chunked = True
-            return
+            return self.headers
 
         length = self.headers.get('content-length', '0')
 
@@ -153,6 +152,13 @@ class Client(object):
             raise HeadersError('invalid content-length')
 
         return self.headers
+
+    def read_response(self):
+
+        self.read_status()
+        self.read_headers()
+
+        return self.status, self.headers
 
     def read_body(self, size):
 
