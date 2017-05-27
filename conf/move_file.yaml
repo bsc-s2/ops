@@ -1,0 +1,40 @@
+ACCESS_KEY: 'ziw5dp1alvty9n47qksu'
+SECRET_KEY: 'V+ZTZ5u5wNvXb+KP5g0dMNzhMeWe372/yRKx4hZV'
+
+ENDPOINT: 'http://s2.i.qingcdn.com'
+
+# 原文件所在的bucket
+SRC_BUCKET: 'test-bucket'
+
+# 目的文件所在的bucket
+DEST_BUCKET: 'test-bucket'
+
+# 文件名前缀替换，实现改变文件路径的效果，如以下配置会将
+# 文件'aaa/bbb/foo/bar.txt'重命名为'ccc/ddd/foo/bar.txt'
+# 这两个配置中的任何一个都不能是另一个的前缀
+OLD_PREFIX: 'aaa/bbb/'
+NEW_PREFIX: 'ccc/ddd/'
+
+# 设置从哪个文件以后开始，（不包含）
+START_MARKER: ''
+
+# 设置到哪个文件结束，（不包含）
+END_MARKER: null
+
+# 设置最多操作多少个文件，如果设置为null，表示不限制个数。通常用于测试
+NUM_LIMIT: null
+
+# 是否复制文件的ACL
+COPY_ACL: true
+
+# 是否删除原文件，如果为true, 则实现move效果，如果为false, 则实现copy效果
+DELETE: true
+
+# 设置线程个数
+THREADS_NUM: 20
+
+# 日志存放目录，日志文件命名规则：move-file-log-for-<bucket name>.log
+LOG_DIR: './'
+
+# 汇报统计信息的时间间隔, 单位秒
+REPORT_INTERVAL: 1
