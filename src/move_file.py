@@ -349,6 +349,12 @@ def load_cli_args():
                         choices=['move_files', 'move_one_file'],
                         help='move one file by name or move files by prefix')
 
+    parser.add_argument('--access_key', type=str,
+                        help='set user access key')
+
+    parser.add_argument('--secret_key', type=str,
+                        help='set user secret key')
+
     parser.add_argument('--src_bucket', type=str,
                         help='the bucket which the source file in')
 
@@ -375,6 +381,8 @@ def load_conf(args):
     conf = load_conf_from_file(conf_path)
 
     conf_keys = ('cmd',
+                 'access_key',
+                 'secret_key',
                  'src_bucket',
                  'dest_bucket',
                  'old_prefix',
