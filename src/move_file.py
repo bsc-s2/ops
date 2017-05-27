@@ -1,11 +1,10 @@
 #!/usr/bin/env python2
 # coding: utf-8
 
+import argparse
 import errno
-import getopt
 import logging
 import os
-import sys
 import threading
 import time
 
@@ -58,7 +57,7 @@ def _mkdir(path):
             raise
 
 
-def get_conf(path):
+def load_conf_from_file(path):
     with open(path) as f:
         conf = yaml.safe_load(f.read())
 
@@ -318,7 +317,16 @@ def report(sess):
         time.sleep(cnf['REPORT_INTERVAL'])
 
 
-def move_file():
+def move_files():
+    if cnf['SRC_BUCKET'] == cnf['DEST_BUCKET']:
+        if (cnf['OLD_PREFIX'].startswith(cnf['NEW_PREFIX'])
+                or cnf['NEW_PREFIX'].startswith(cnf['OLD_PREFIX'])):
+
+            print (('error: OLD_PREFIX: %s, or NEW_PREFIX: %s, ' +
+                    'should not starts with the other') %
+                   (cnf['OLD_PREFIX'], cnf['NEW_PREFIX']))
+            return
+
     sess = {'stop': False}
 
     report_th = _thread(report, (sess,))
@@ -335,31 +343,70 @@ def move_file():
     report_state()
 
 
+def load_cli_args():
+    parser = argparse.ArgumentParser(description='move file')
+    parser.add_argument('cmd', type=str,
+                        choices=['move_files', 'move_one_file'],
+                        help='move one file by name or move files by prefix')
+
+    parser.add_argument('--src_bucket', type=str,
+                        help='the bucket which the source file in')
+
+    parser.add_argument('--dest_bucket', type=str,
+                        help='the bucket which the file will be move to')
+
+    parser.add_argument('--old_prefix', type=str,
+                        help=('set the old prefix when moving files by prefix, ' +
+                              'set the source file name when moving one file'))
+
+    parser.add_argument('--new_prefix', type=str,
+                        help=('set the new prefix when moving files by prefix, ' +
+                              'set the destination file name when moving one file'))
+
+    parser.add_argument('--conf_path', type=str,
+                        help='set the path of the conf path')
+
+    args = parser.parse_args()
+    return args
+
+
+def load_conf(args):
+    conf_path = args.conf_path or '../conf/move_file.yaml'
+    conf = load_conf_from_file(conf_path)
+
+    conf_keys = ('cmd',
+                 'src_bucket',
+                 'dest_bucket',
+                 'old_prefix',
+                 'new_prefix',
+                 )
+
+    for k in conf_keys:
+        v = getattr(args, k)
+        if v is not None:
+            conf[k.upper()] = v
+
+    return conf
+
+
 if __name__ == "__main__":
 
-    opts, _ = getopt.getopt(sys.argv[1:], '', ['conf=', ])
-    opts = dict(opts)
+    args = load_cli_args()
+    cnf = load_conf(args)
 
-    if opts.get('--conf') is None:
-        conf_path = '../conf/move_file.yaml'
-    else:
-        conf_path = opts['--conf']
+    _mkdir(cnf['LOG_DIR'])
+    logger = add_logger()
 
-    cnf = get_conf(conf_path)
-
-    if cnf['SRC_BUCKET'] == cnf['DEST_BUCKET']:
-        if (cnf['OLD_PREFIX'].startswith(cnf['NEW_PREFIX'])
-                or cnf['NEW_PREFIX'].startswith(cnf['OLD_PREFIX'])):
-
-            print (('error: OLD_PREFIX: %s, or NEW_PREFIX: %s, ' +
-                    'should not starts with the other') %
-                   (cnf['OLD_PREFIX'], cnf['NEW_PREFIX']))
-            sys.exit(0)
+    logger.info('args={a}'.format(a=args))
+    logger.info('conf={c}'.format(c=cnf))
 
     s3_client = boto_client()
 
-    _mkdir(cnf['LOG_DIR'])
+    if cnf['CMD'] == 'move_one_file':
+        file_info = {
+            'key_name': cnf['OLD_PREFIX'],
+        }
+        print move_one_file(file_info)
 
-    logger = add_logger()
-
-    move_file()
+    elif cnf['CMD'] == 'move_files':
+        move_files()
