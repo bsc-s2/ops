@@ -152,5 +152,32 @@ public:
 
         return atoi(itr->second.c_str());
     }
+
+    const char* get_bucket()
+    {
+        auto itr = m_config.find("bucket");
+        if(itr == m_config.end())
+            return "no such bucket";
+
+        return itr->second.c_str();
+    }
+
+    const char* get_access_key()
+    {
+        auto itr = m_config.find("access_key");
+        if(itr == m_config.end())
+            return "no such access key";
+
+        return itr->second.c_str();
+    }
+
+    const char* get_secret_key()
+    {
+        auto itr = m_config.find("secret_key");
+        if(itr == m_config.end())
+            return "no such secret key";
+
+        return itr->second.c_str();
+    }
 };
 

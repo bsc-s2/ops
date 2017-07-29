@@ -86,7 +86,7 @@ void download_file(Aws::S3::S3Client s3_client)
     Aws::S3::Model::GetObjectRequest object_request;
     Aws::String key = get_download_key();
     std::cout << "---------------------download file-------" << key << std::endl;
-    object_request.WithBucket("edge-test").WithKey(key);
+    object_request.WithBucket(cfg.get_bucket()).WithKey(key);
 
     auto get_object_outcome = s3_client.GetObject(object_request);
     if (get_object_outcome.IsSuccess())
@@ -100,8 +100,8 @@ void download_file(Aws::S3::S3Client s3_client)
         succ_count++;
         if(cfg.open_log()) fs_log    << "begin_time:"<< tm_to_str(tv_begin)
                                << " end_time:" << tm_to_str(tv_end)
-                               << " key:" << std::left << setw(30) << key
-                               << " used_ms:" << std::left << setw(10) << ms
+                               << " key:" << std::left <<  key
+                               << " used_ms:" << std::left << ms
                                << " thread_id:" << (unsigned long int)pthread_self() << endl;
         pthread_mutex_unlock(&rps_mutex);
 
@@ -126,7 +126,7 @@ void upload_file(Aws::S3::S3Client s3_client, Aws::String file_path)
     else
         key = get_upload_key();
 
-    object_request.WithBucket("edge-test").WithKey(key);
+    object_request.WithBucket(cfg.get_bucket()).WithKey(key);
     ///Binary files must also have the std::ios_base::bin flag or'ed in
     auto input_data = Aws::MakeShared<Aws::FStream>("PutObjectInputStream",
                                     file_path.c_str(), std::ios_base::in);
@@ -144,8 +144,8 @@ void upload_file(Aws::S3::S3Client s3_client, Aws::String file_path)
         succ_count++;
         if(cfg.open_log()) fs_log    << "begin_time:"<< tm_to_str(tv_begin)
                                << " end_time:" << tm_to_str(tv_end)
-                               << " key:" << std::left << setw(30) << key
-                               << " used_ms:" << std::left << setw(10) << ms
+                               << " key:" << std::left << key
+                               << " used_ms:" << std::left << ms
                                << " thread_id:" << (unsigned long int)pthread_self() << endl;
         pthread_mutex_unlock(&rps_mutex);
     }
@@ -169,8 +169,8 @@ Aws::S3::S3Client create_client(Aws::SDKOptions& options)
     config.connectTimeoutMs = 300000;
     config.requestTimeoutMs = 300000;
 
-    Aws::String access_key("7o8dptgv3951k0aq6rhw");
-    Aws::String secret_key("FfC5iTpASC1MXp3Yy7u57gmCjaLBsoQIP2SHRcfm");
+    Aws::String access_key(cfg.get_access_key());
+    Aws::String secret_key(cfg.get_secret_key());
     return Aws::S3::S3Client(Aws::Auth::AWSCredentials(access_key, secret_key), config);
 }
 
