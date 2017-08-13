@@ -4,7 +4,7 @@
 #### 编译压测程序
 
 - 环境依赖：aws-cpp-sdk编译环境
-- 编译方法：g++ -std=c++11 -L/root/codingnet/sdk-test/cpp -laws-cpp-sdk-core -laws-cpp-sdk-s3 test_hik.cpp -o hik_tt
+- 编译方法：make
 
 #### 配置压测参数
 
@@ -37,6 +37,7 @@
         - secret_key:指定secret_key
 
 #### 运行压测程序
+
 ```
 sh start.sh ${file_size} ${max_rps}
 ```
