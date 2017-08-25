@@ -10,4 +10,5 @@ END {
     for (i in s) {
         printf ("%10s %d\n",i,s[i])
     }
-}'
+}' \
+    | sort
