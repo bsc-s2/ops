@@ -62,6 +62,8 @@ echo ===== mount all
 mount -a \
     || exit 1
 
+df -h $dir
+
 GB=$(df -m $dir | tail -n1 | awk '{print int($2 / 1024)}')
 if [ $GB -gt $should_gt_in_gb ]; then
     echo ===== mounted size is: $GB GB
