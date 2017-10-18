@@ -5,6 +5,7 @@ unittest utility
 import inspect
 import logging
 import os
+import time
 import unittest
 
 _glb = {
@@ -12,6 +13,23 @@ _glb = {
 }
 
 debug_to_stdout = os.environ.get('UT_DEBUG') == '1'
+
+
+class Timer(object):
+
+    def __init__(self):
+        self.start = None
+        self.end = None
+
+    def __enter__(self):
+        self.start = time.time()
+        return self
+
+    def __exit__(self, errtype, errval, _traceback):
+        self.end = time.time()
+
+    def spent(self):
+        return (self.end or time.time()) - self.start
 
 
 class ContextFilter(logging.Filter):

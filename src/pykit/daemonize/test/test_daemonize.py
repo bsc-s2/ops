@@ -2,33 +2,23 @@
 # coding: utf-8
 
 import os
-import subprocess
 import time
 import unittest
+
+from pykit import proc
+from pykit import ututil
+from pykit import daemonize
+
+dd = ututil.dd
 
 this_base = os.path.dirname(__file__)
 
 
-def subproc(script):
+def subproc(script, env=None):
+    if env is None:
+        env=dict(PYTHONPATH=this_base + '/../..',)
 
-    subproc = subprocess.Popen(['sh'],
-                               close_fds=True,
-                               env=dict(
-                                       PYTHONPATH=this_base + '/../..',
-                               ),
-                               stdin=subprocess.PIPE,
-                               stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE)
-
-    out, err = subproc.communicate(script)
-
-    subproc.wait()
-
-    if subproc.returncode != 0:
-        print out
-        print err
-
-    return (subproc.returncode, out, err)
+    return proc.shell_script(script, env=env)
 
 
 def read_file(fn):
@@ -53,14 +43,14 @@ class TestDaemonize(unittest.TestCase):
         try:
             subproc('python2 {b}/foo.py stop'.format(b=this_base))
         except Exception as e:
-            print repr(e)
+            dd(repr(e))
 
         time.sleep(0.1)
 
         try:
             subproc('python2 {b}/bar.py stop'.format(b=this_base))
         except Exception as e:
-            print repr(e)
+            dd(repr(e))
 
         # remove written file
 
@@ -127,3 +117,27 @@ class TestDaemonize(unittest.TestCase):
 
         self.assertEqual(None, read_file(self.bar_fn),
                          'bar.py not started or run')
+
+    def test_default_pid_file(self):
+
+        d = daemonize.Daemon()
+        self.assertEqual('/var/run/__main__', d.pidfile)
+
+    def test_close_fds(self):
+        env = dict(PYTHONPATH='{path_daemonize}:{path_pykit}'.format(
+                              path_daemonize=this_base + '/../..',
+                              path_pykit=this_base + '/../../..'))
+
+        subproc('python2 {b}/close_fds.py close'.format(b=this_base), env=env)
+        time.sleep(0.2)
+
+        fds = read_file(self.foo_fn)
+
+        self.assertNotIn(self.bar_fn, fds)
+
+        subproc('python2 {b}/close_fds.py open'.format(b=this_base), env=env)
+        time.sleep(0.2)
+
+        fds = read_file(self.foo_fn)
+
+        self.assertIn(self.bar_fn, fds)

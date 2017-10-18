@@ -1,7 +1,8 @@
 #!/bin/env python2
 # coding: utf-8
 
-import types
+import copy
+from collections import defaultdict
 
 
 def depth_iter(mydict, ks=None, maxdepth=10240, intermediate=False):
@@ -45,6 +46,44 @@ def breadth_iter(mydict):
 
             if isinstance(v, dict):
                 q.append((ks, v))
+
+
+def get(dic, key_path, vars=None, default=0, ignore_vars_key_error=None):
+
+    if vars is None:
+        vars = {}
+
+    if ignore_vars_key_error is None:
+        ignore_vars_key_error = True
+
+    _default = vars.get('_default', default)
+    node = dic
+
+    _keys = key_path.split('.')
+    if _keys == ['']:
+        return node
+
+    for k in _keys:
+
+        if k.startswith('$'):
+            k = k[1:]
+            if k in vars:
+                key = vars[k]
+            else:
+                if ignore_vars_key_error:
+                    return _default
+                else:
+                    raise KeyError('{k} does not exist in vars: {vars}'.format(
+                        k=k, vars=vars))
+        else:
+            key = k
+
+        if key not in node:
+            return _default
+
+        node = node[key]
+
+    return node
 
 
 def make_getter_str(key_path, default=0):
@@ -115,7 +154,8 @@ def make_setter(key_path, value=None, incr=False):
             val_to_set = val_to_set(vars)
 
         if k not in _node:
-            _node[k] = _get_zero_value_of(val_to_set)
+            # use the default constructor to get a default "zero" value
+            _node[k] = type(val_to_set)()
 
         if incr:
             _node[k] += val_to_set
@@ -125,6 +165,46 @@ def make_setter(key_path, value=None, incr=False):
         return _node[k]
 
     return _set_dict
+
+
+def _contains(a, b, ref_table):
+    if a is b:
+        return True
+
+    if (isinstance(a, list) and isinstance(b, list)
+            or (isinstance(a, tuple) and isinstance(b, tuple))):
+
+        if len(a) < len(b):
+            return False
+
+        for i, v in enumerate(b):
+            if not _contains(a[i], v, ref_table):
+                return False
+        else:
+            return True
+
+    if not isinstance(a, dict) or not isinstance(b, dict):
+        return a == b
+
+    id_a, id_b = id(a), id(b)
+
+    if ref_table[id_a].get(id_b) is not None:
+        return ref_table[id_a][id_b]
+
+    ref_table[id_a][id_b] = True
+
+    for k, v in b.items():
+        if a.get(k) is None:
+            return False
+
+        if not _contains(a[k], v, ref_table):
+            return False
+
+    return True
+
+
+def contains(a, b):
+    return _contains(a, b, defaultdict(dict))
 
 
 class AttrDict(dict):
@@ -164,6 +244,52 @@ class AttrDict(dict):
         self.__dict__ = self
 
 
+class AttrDictCopy(dict):
+
+    # Allow to set attribute or key.
+    # But when get attribute or key, the value is copied before returning.
+    # To prevent changing original data.
+
+    def __getattr__(self, k):
+
+        if k not in self:
+            raise AttributeError(repr(k) + ' not found')
+
+        return self[k]
+
+    def __setattr__(self, k, v):
+        raise AttributeError('AttrDictCopy does not allow to set attribute')
+
+    def __getitem__(self, k):
+
+        if k not in self:
+            raise KeyError(repr(k) + ' not found')
+
+        v = super(AttrDictCopy, self).__getitem__(k)
+        if isinstance(v, AttrDictCopy):
+            # reduce it to a normal dict, or deepcopy can not set items to the new instance
+            v = v.as_dict()
+            v = copy.deepcopy(v)
+            return _attrdict(AttrDictCopy, v, {})
+        else:
+            return copy.deepcopy(v)
+
+    def __setitem__(self, k, v):
+        raise KeyError('AttrDictCopy does not allow to set key')
+
+    def as_dict(self):
+        d = {}
+
+        for k in self.keys():
+            v = super(AttrDictCopy, self).__getitem__(k)
+            if isinstance(v, AttrDictCopy):
+                v = v.as_dict()
+
+            d[k] = v
+
+        return d
+
+
 def attrdict(*args, **kwargs):
     """
     Make a dict-like object whose keys can also be accessed with attribute.
@@ -171,47 +297,32 @@ def attrdict(*args, **kwargs):
     """
 
     d = dict(*args, **kwargs)
-    ref = {}
-
-    return _attrdict(d, ref)
+    return _attrdict(AttrDict, d, {})
 
 
-def _attrdict(d, ref):
+def attrdict_copy(*args, **kwargs):
+
+    d = dict(*args, **kwargs)
+    return _attrdict(AttrDictCopy, d, {})
+
+
+def _attrdict(attrdict_clz, d, ref):
 
     if not isinstance(d, dict):
         return d
 
-    if isinstance(d, AttrDict):
+    if isinstance(d, attrdict_clz):
         return d
 
     if id(d) in ref:
         return ref[id(d)]
 
     # id() is the memory address of an object, thus it is unique.
-    ad = AttrDict(d)
+    ad = attrdict_clz(d)
     ref[id(d)] = ad
 
     for k in d.keys():
-        ad[k] = _attrdict(d[k], ref)
+        sub_ad = _attrdict(attrdict_clz, d[k], ref)
+        super(attrdict_clz, ad).__setitem__(k, sub_ad)
 
     return ad
-
-
-def _get_zero_value_of(val):
-
-    if type(val) in types.StringTypes:
-        zero_val = ''
-    elif type(val) in (types.IntType, types.LongType):
-        zero_val = 0
-    elif type(val) is types.FloatType:
-        zero_val = 0.0
-    elif type(val) is types.BooleanType:
-        zero_val = False
-    elif type(val) is types.TupleType:
-        zero_val = ()
-    elif type(val) is types.ListType:
-        zero_val = []
-    else:
-        raise ValueError('invalid type: {v}'.format(v=repr(val)))
-
-    return zero_val

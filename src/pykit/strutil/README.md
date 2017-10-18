@@ -5,15 +5,19 @@
 - [Name](#name)
 - [Status](#status)
 - [Synopsis](#synopsis)
-  - [colored string:](#colored-string)
-  - [colored command prompt:](#colored-command-prompt)
-- [Description](#description)
+  - [colored string](#colored-string)
+  - [colored command prompt](#colored-command-prompt)
+- [Classes](#classes)
+  - [strutil.ColoredString](#strutilcoloredstring)
 - [Methods](#methods)
+  - [strutil.break_line](#strutilbreak_line)
+  - [strutil.color](#strutilcolor)
+  - [strutil.colorize](#strutilcolorize)
   - [strutil.line_pad](#strutilline_pad)
   - [strutil.format_line](#strutilformat_line)
-  - [strutil.color](#strutilcolor)
   - [strutil.struct_repr](#strutilstruct_repr)
   - [strutil.format_table](#strutilformat_table)
+  - [strutil.tokenize](#strutiltokenize)
 - [Author](#author)
 - [Copyright and License](#copyright-and-license)
 
@@ -68,10 +72,11 @@ strutil.format_line(items, sep=' | ', aligns = 'llllll')
 #          |              |      |    |             | 2010 other
 ```
 
-## colored string:
+## colored string
 
 ```python
-from pykit.strutil import blue, green, yellow
+from pykit.strutil import blue
+from pykit.strutil import green
 blue("blue") + " and " + green("green")
 ```
 
@@ -79,7 +84,7 @@ The above snippet will output colored text on a terminal:
 
 ![](res/colored-string.png)
 
-## colored command prompt:
+## colored command prompt
 
 If you are going to use colored string as terminal prompt,
 the terminal prompt is not wrapping correctly with very long commands.
@@ -116,11 +121,164 @@ Those screenshots show this issue, the cursor is box.
 
 ![](res/colored-true-prompt-end-key.png)
 
-#   Description
+#   Classes
 
-It provides with several string operation functions.
+## strutil.ColoredString
+
+**syntax**:
+`strutil.ColoredString(normal_string, color=None, prompt=True)`
+
+It provides the colored string in terminal on Unix.
+
+**arguments**:
+
+-   `normal_string`:
+    the string to colour.
+
+-   `color`:
+    the color of **normal_string**,
+    named color are:
+    `blue` `cyan` `green` `purple` `red` `white` `yellow`
+    `optimal` `normal` `loaded` `warn` `danger`,
+
+    you can colour string with integer [0-256].
+
+**return**:
+An instance of strutil.ColoredString.
+
 
 #   Methods
+
+
+##  strutil.break_line
+
+**syntax**:
+`strutil.break_line(linestr, width)`
+
+Split a string `linestr` to lines by one space or line break
+to make length of every line no greater than `width`.
+Only one space or line break is replaced at a time. Any others stay.
+
+Examples:
+```
+strutil.break_line('foo bar bar.', 9)
+
+#['foo bar', 'bar.']
+
+print strutil.break_line('one   two  three', 4)
+
+#['one ', ' two', '', 'three']
+```
+
+**arguments**:
+
+-   `linestr`:
+    is a string.
+
+-   `width`:
+    is the longest line length expected after being split.
+    If `width` is negative, get the same result as `width` is 0.
+    And if `width` is a float, just integer part is used.
+
+**return**:
+A list filled with lines of split `linestr`.
+
+##  strutil.color
+
+**syntax**:
+`strutil.<color>(str)`
+
+Create colored string to use in terminal.
+
+```python
+t = strutil.blue("blue-text")
+```
+
+Supported operation on colored string `t`:
+
+```python
+# concatenate with other colored string:
+t + strutil.green("green-text")
+
+# concatenate with plain string:
+t + "a"
+
+# repeat:
+t * 3
+
+# length:
+len(t)
+```
+
+Supported color names:
+
+-   `blue`
+-   `cyan`
+-   `green`
+-   `yellow`
+-   `red`
+-   `purple`
+-   `white`
+-   `optimal` same as `blue`
+-   `normal` no color
+-   `loaded` same as `green`
+-   `warn` same as `dark yellow`
+-   `danger` same as `red`
+
+## strutil.colorize
+
+**syntax**:
+`strutil.colorize(percent, total=100, ptn='{0}')`
+
+Colorize a percentage number.
+
+Synopsis:
+
+```python
+from pykit.strutil import colorize
+
+# the color of p printed: blue -> green -> yellow -> red
+for p in xrange(0, 100):
+        print colorize(p, 100),
+        print
+
+# the color of p printed: red -> yellow -> green -> blue
+for p in xrange(0, 100):
+        print colorize(p, -100),
+        print
+
+# the color of p printed is red if p>=10
+for p in xrange(0, 100):
+        print colorize(p, 10),
+        print
+
+# the color of p printed is blue if p>=10
+for p in xrange(0, 100):
+        print colorize(p, -10),
+        print
+
+# 'the percent is: 100' with red
+print colorize(100, 100, 'the percent is: {0}')
+
+# ' 22%' with green
+print colorize(22, 100, '{0:>3}%')
+```
+
+**arguments**:
+
+-   `percent`:
+    the percent to colour.
+
+-   `total`:
+    the limitation of **percent** to colour.
+    negative integer means to reverse.
+
+-   `ptn`:
+    the format of **percent**.
+
+**return**:
+A colored formatted percent string.
+
 
 ## strutil.line_pad
 
@@ -181,45 +339,6 @@ strutil.format_line([["name:", "age:"], ["drdrxp", "18"], "wow"], sep=" | ", ali
 
 **return**:
 formatted string.
-
-##  strutil.color
-
-**syntax**:
-`strutil.<color>(str)`
-
-Create colored string for use in terminal.
-
-```python
-t = strutil.blue("blue-text")
-```
-
-Supported operation on colored string `t`:
-
-```python
-# concatenate with plain string:
-t + "a"
-
-# repeat:
-t * 3
-
-# length:
-len(t)
-```
-
-Supported color names:
-
--   `blue`
--   `cyan`
--   `green`
--   `yellow`
--   `red`
--   `purple`
--   `white`
--   `optimal` same as `blue`
--   `normal` no color
--   `loaded` same as `green`
--   `warn` same as `dark yellow`
--   `danger` same as `red`
 
 ##  strutil.struct_repr
 
@@ -364,6 +483,76 @@ for l in strutil.format_table(inp, keys=[['bucket', 'Bkt'],
     specifies column separator char.
 
     By default it is `" | "`.
+
+**return**:
+a list of string.
+
+
+## strutil.tokenize
+
+**syntax**:
+`strutil.tokenize(linestr, sep=None, quote='"\'', preserve=False)`
+
+Tokenize a line.
+
+Synopsis:
+
+```python
+from pykit.strutil import tokenize
+
+# ['ab']
+print tokenize('ab')
+
+# ['a', 'b']
+print tokenize('a b')
+
+# ['a', 'b']
+print tokenize(' a  b ')
+
+# ['a', 'b']
+print tokenize(' a\t b\n c\r ')
+
+# ['a b', 'c d']
+print tokenize('a bxyc d', sep='xy')
+
+# ['a', 'x x', 'b']
+print tokenize('a "x x" b')
+
+# ['a', 'x x', 'b']
+print tokenize("a 'x x' b 'x") # the last `'x` has no pair, discard
+
+# ['a', 'a b', 'c d']
+print tokenize(' a  xa bx yc dy ', quote='xy')
+
+# ['a', 'xa bx', 'yc dy']
+print tokenize('a xa bx yc dy', quote='xy', preserve=True)
+
+# ['', 'a', 'xa bx', 'yc dy', '']
+print tokenize(' a xa bx yc dy ', sep=' ', quote='xy', preserve=True)
+```
+
+**arguments**:
+
+-   `linestr`:
+    the line to tokenize.
+
+-   `sep`:
+    is None or a non-empty string separator to tokenize with.
+    If sep is None, runs of consecutive whitespace are regarded as a single
+    separator, and the result will contain no empty strings at the start or end
+    if the string has leading or trailing whitespace. Consequently, splitting
+    an empty string or a string consisting of just whitespace with a None
+    separator returns `[]`. Just like `str.split(None)`.
+    By default, `sep` is None.
+
+-   `quote`:
+    Every character in `quote` is regarded as a quote. Add a `\` prefix to make
+    an exception. Segment between the same quotes is preserved.
+    By default, `quote` is `'"\''`.
+
+-   `preserve`:
+    preserve the quote itself if `preserve` is `True`.
+    By default, `preserve` is `False`.
 
 **return**:
 a list of string.

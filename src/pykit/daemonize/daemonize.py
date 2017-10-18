@@ -6,33 +6,38 @@ import signal
 import sys
 import time
 
+import __main__
+
 logger = logging.getLogger(__name__)
 
 
 class Daemon(object):
 
     def __init__(self,
-                 pidfile,
+                 pidfile=None,
                  stdin='/dev/null',
                  stdout='/dev/null',
-                 stderr='/dev/null'):
+                 stderr='/dev/null',
+                 close_fds=False):
 
         self.stdin = stdin
         self.stdout = stdout
         self.stderr = stderr
-        self.pidfile = pidfile
+        self.pidfile = pidfile or _default_pid_file()
         # NOTE: We need to open another separate file to avoid the file
-        #       reopened # again. Which case, process lose file lock.
+        #       being reopened again.
+        #       In which case, process loses file lock.
         #
         # From "man fcntl":
         # As well as being removed by an explicit F_UNLCK, record locks are
-        # automatically released when the process terminates  or  if  it
-        # closes  any  file descriptor  referring  to  a  file  on which locks
-        # are held.  This is bad: it means that a process can lose the locks
+        # automatically released when the process terminates or if it
+        # closes any file descriptor referring to a file on which locks
+        # are held. This is bad: it means that a process can lose the locks
         # on a file like /etc/passwd or /etc/mtab when for some reason a
         # library function decides to open, read and close it.
-        self.lockfile = pidfile + ".lock"
+        self.lockfile = self.pidfile + ".lock"
         self.lockfp = None
+        self.close_fds = close_fds
 
     def daemonize(self):
         """
@@ -46,6 +51,7 @@ class Daemon(object):
             pid = os.fork()
             if pid > 0:
                 # exit first parent
+                _close_std_io()
                 sys.exit(0)
 
         except OSError as e:
@@ -62,11 +68,15 @@ class Daemon(object):
             pid = os.fork()
             if pid > 0:
                 # exit from second parent
+                _close_std_io()
                 sys.exit(0)
 
         except OSError as e:
             logger.error("fork #2 failed: " + repr(e))
             sys.exit(1)
+
+        if self.close_fds:
+            _close_fds()
 
         # redirect standard file descriptors
         sys.stdout.flush()
@@ -178,12 +188,45 @@ def _read_file(fn):
         return f.read()
 
 
-def daemonize_cli(run_func, pidfn):
+def _close_std_io():
+    os.close(0)
+    os.close(1)
+    os.close(2)
+
+
+def _close_fds():
+
+    try:
+        max_fd = os.sysconf("SC_OPEN_MAX")
+    except ValueError as e:
+        logger.warn(repr(e) + ' while get max fds of a process')
+        max_fd = 65536
+
+    for i in xrange(3, max_fd):
+        try:
+            os.close(i)
+        except OSError:
+            pass
+
+
+def _default_pid_file():
+
+    if hasattr(__main__, '__file__'):
+        name = __main__.__file__
+        name = os.path.basename(name)
+        if name == '<stdin>':
+            name = '__stdin__'
+        return '/var/run/' + name.rsplit('.', 1)[0]
+    else:
+        return '/var/run/pykit.daemonize'
+
+
+def daemonize_cli(run_func, pidfn, close_fds=False):
 
     logging.basicConfig(stream=sys.stderr)
     logging.getLogger(__name__).setLevel(logging.DEBUG)
 
-    d = Daemon(pidfn)
+    d = Daemon(pidfile=pidfn, close_fds=close_fds)
 
     logger.info("sys.argv: " + repr(sys.argv))
 

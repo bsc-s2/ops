@@ -2,34 +2,111 @@
 # coding: utf-8
 
 
+import re
+import string
+import sys
 import types
 
-listtype = (type(()), type([]))
+listtype = (types.TupleType, types.ListType)
 
+def _findquote(line, quote):
+    if len(quote) == 0:
+        return -1, -1, []
 
-def tokenize(line):
-    # double quoted segment is preseverd
+    i = 0
+    n = len(line)
+    escape = []
+    while i < n:
+        if line[i] == '\\':
+            escape.append(i)
+            i += 2
+            continue
 
-    tokens = line.split(' ')
+        if line[i] in quote:
+            quote_s = i - len(escape)
 
-    stck = [[]]
+            j = i
+            i += 1
+            while i < n and line[i] != line[j]:
+                if line[i] == '\\':
+                    escape.append(i)
+                    i += 2
+                    continue
 
-    for t in tokens:
+                i += 1
 
-        sp = t.split('"')
-        n = len(sp)
-
-        if n % 2 == 0:
-            if len(stck) == 1:
-                stck.append([t])
+            if i < n:
+                quote_e = i - len(escape)
+                return quote_s, quote_e, escape
             else:
-                stck[-1].append(t)
-                sss = stck.pop()
-                stck[-1].append(' '.join(sss))
-        else:
-            stck[-1].append(t)
+                return quote_s, -1, escape
 
-    return stck[0]
+        i += 1
+
+    return -1, -1, escape
+
+def tokenize(line, sep=None, quote='"\'', preserve=False):
+    if sep == quote:
+        raise ValueError, 'diffrent sep and quote is required'
+
+    if sep is None:
+        if len(line) == 0:
+            return []
+        line = line.strip()
+
+    rst = ['']
+    n = len(line)
+    i = 0
+    while i < n:
+        quote_s, quote_e, escape = _findquote(line[i:], quote)
+
+        if len(escape) > 0:
+            lines = []
+            x = 0
+            for e in escape:
+                lines.append(line[x:i+e])
+                x = i+e+1
+            lines.append(line[x:])
+            line = ''.join(lines)
+            n = len(line)
+
+        if quote_s < 0:
+            sub = n
+        else:
+            sub = i + quote_s
+
+        if i < sub:
+            sub_rst = line[i:sub].split(sep)
+            if sep is None:
+                if line[sub-1] in string.whitespace:
+                    sub_rst.append('')
+                if line[i] in string.whitespace:
+                    sub_rst.insert(0, '')
+
+            head = rst.pop()
+            sub_rst[0] = head + sub_rst[0]
+            rst += sub_rst
+
+        if quote_s < 0:
+            break
+
+        # discard incomplete
+        # 'a b"c'  ->  ['a']
+        if quote_e < 0:
+            rst.pop()
+            break
+
+        head = rst.pop()
+
+        if preserve:
+            head += line[i+quote_s:i+quote_e+1]
+        else:
+            head += line[i+quote_s+1:i+quote_e]
+
+        rst.append(head)
+        i += quote_e + 1
+
+    return rst
 
 
 def line_pad(linestr, padding=''):
@@ -103,7 +180,7 @@ def format_line(items, sep=' ', aligns=''):
             elt = items[j][i]
 
             actualWidth = elt.__len__()
-            elt = to_output_format(elt)
+            elt = utf8str(elt)
 
             if actualWidth < width:
                 padding = ' ' * (width - actualWidth)
@@ -173,7 +250,7 @@ def struct_repr(data, key=None):
 
         return lines
 
-    elif type(data) == type({}):
+    elif type(data) == types.DictType:
 
         if len(data) == 0:
             return ['{}']
@@ -228,7 +305,7 @@ def _get_key_and_headers(keys, rows):
         else:
             r0 = rows[0]
 
-            if type(r0) == type({}):
+            if type(r0) == types.DictType:
                 keys = r0.keys()
                 keys.sort()
             elif type(r0) in listtype:
@@ -302,7 +379,7 @@ def format_table(rows,
         if row_sep is not None:
             lns.append([[None] for k in keys])
 
-        if type(row) == type({}):
+        if type(row) == types.DictType:
 
             ln = [struct_repr(row.get(k, ''))
                   for k in keys]
@@ -360,18 +437,18 @@ def utf8str(s):
         return str(s)
 
 
-def colorize(v, total, ptn='{0}'):
+def colorize(percent, total=100, ptn='{0}'):
     if total > 0:
-        color = fading_color(v, total)
+        color = fading_color(percent, total)
     else:
-        color = fading_color(-total - v, -total)
-    return ColoredString(ptn.format(v), color)
+        color = fading_color(-total - percent, -total)
+    return ColoredString(ptn.format(percent), color)
 
 
 class ColoredString(object):
 
     def __init__(self, v, color=None, prompt=True):
-        if type(color) == type(''):
+        if type(color) in types.StringTypes:
             color = _named_colors[color]
 
         if isinstance(v, ColoredString):
@@ -406,7 +483,11 @@ class ColoredString(object):
                     for x in self.elts])
 
     def __add__(self, other):
-        c = ColoredString(0)
+        prompt = self._prompt
+        if isinstance(other, ColoredString):
+            prompt = prompt or other._prompt
+
+        c = ColoredString('', prompt=prompt)
         if isinstance(other, ColoredString):
             c.elts = self.elts + other.elts
         else:
@@ -414,45 +495,9 @@ class ColoredString(object):
         return c
 
     def __mul__(self, num):
-        c = ColoredString(0)
+        c = ColoredString('', prompt=self._prompt)
         c.elts = self.elts * num
         return c
-
-
-def blue(v): return ColoredString(v, 'blue')
-
-
-def cyan(v): return ColoredString(v, 'cyan')
-
-
-def green(v): return ColoredString(v, 'green')
-
-
-def yellow(v): return ColoredString(v, 'yellow')
-
-
-def red(v): return ColoredString(v, 'red')
-
-
-def purple(v): return ColoredString(v, 'purple')
-
-
-def white(v): return ColoredString(v, 'white')
-
-
-def optimal(v): return ColoredString(v, 'optimal')
-
-
-def normal(v): return ColoredString(v, 'normal')
-
-
-def loaded(v): return ColoredString(v, 'loaded')
-
-
-def warn(v): return ColoredString(v, 'warn')
-
-
-def danger(v): return ColoredString(v, 'danger')
 
 
 def fading_color(v, total):
@@ -490,12 +535,36 @@ _named_colors = {
     'white': 255,
 }
 
+def _make_colored_function(name):
+    def _colored(v):
+        return ColoredString(v, name)
 
-def to_output_format(s):
+    _colored.__name__ = name
 
-    if type(s) == type(u''):
-        s = s.encode('utf-8')
-    else:
-        s = str(s)
+    return _colored
 
-    return s
+for _func_name in _named_colors:
+    setattr(sys.modules[__name__],
+            _func_name, _make_colored_function(_func_name))
+
+
+def break_line(linestr, width):
+    lines = re.split('\n|\r', linestr)
+    rst = []
+
+    for line in lines:
+        words = line.split(' ')
+
+        buf = words[0]
+        for word in words[1:]:
+            if len(word) + len(buf) + 1 > width:
+                rst.append(buf)
+                buf = word
+            else:
+                buf += ' ' + word
+
+        if buf != '':
+            rst.append(buf)
+
+    return rst
+

@@ -1,9 +1,11 @@
 import logging
+import random
 import threading
 import time
 import unittest
 
 from pykit import jobq
+from pykit import threadutil
 
 
 def add1(args):
@@ -208,7 +210,7 @@ class TestJobManager(unittest.TestCase):
 
         self.assertTrue(0.09 < t1 - t0 < 0.11)
 
-    def test_probe(self):
+    def test_stat(self):
 
         def _pass(args):
             return args
@@ -228,6 +230,114 @@ class TestJobManager(unittest.TestCase):
             self.assertEqual(0, st['doing'])
 
         jm.join()
+
+    def test_stat_on_builtin_method(self):
+
+        rst = []
+        jm = jobq.JobManager([rst.append])
+
+        # stat() read attribute `func.__module__`.
+        # But for builtin method, there is no __module__ attribute.
+
+        # this should not raise
+        jm.stat()
+
+        jm.join()
+
+
+    def test_set_thread_num(self):
+
+        def _pass(args):
+            return args
+
+        rst = []
+
+        jm = jobq.JobManager([_pass, rst.append])
+
+        for invalid in (0, -1, 1.1):
+            self.assertRaises(
+                AssertionError, jm.set_thread_num, _pass, invalid)
+
+        n = 10240
+        for i in range(n):
+
+            jm.put(i)
+
+            # change thread number every 91 put
+            if i % 91:
+                # randomly change thread number
+                jm.set_thread_num(_pass, i % 3 + 1)
+
+        jm.join()
+
+        rst.sort()
+        for i in range(n):
+            self.assertEqual(i, rst[i])
+
+    def test_set_thread_num_with_object_method(self):
+
+        """
+        In python2, `x = X(); x.meth is x.meth` results in a `False`.
+        Every time to retrieve a method, python creates a new **bound** function.
+
+        See https://stackoverflow.com/questions/15977808/why-dont-methods-have-reference-equality
+        """
+
+        class X(object):
+            def meth(self):
+                pass
+
+        x = X()
+
+        jm = jobq.JobManager([x.meth])
+
+        before = jm.stat()
+        self.assertEqual(1, before['workers'][0]['nr_worker'])
+
+        # This should not raise JobWorkerNotFound.
+        jm.set_thread_num(x.meth, 2)
+
+        after = jm.stat()
+        self.assertEqual(2, after['workers'][0]['nr_worker'])
+
+        jm.join()
+
+
+    def test_set_thread_num_keep_order(self):
+
+        def _pass(args):
+            return args
+
+        rst = []
+
+        jm = jobq.JobManager([_pass, rst.append], keep_order=True)
+
+        setter = {'running': True}
+
+        def _change_thread_nr():
+            while setter['running']:
+                jm.set_thread_num(_pass, random.randint(1, 4))
+                time.sleep(0.5)
+
+        ths = []
+        for ii in range(3):
+            th = threadutil.start_daemon_thread(_change_thread_nr)
+            ths.append(th)
+
+        n = 10240
+        for i in range(n):
+            jm.put(i)
+
+        jm.join()
+
+        rst.sort()
+        for i in range(n):
+            self.assertEqual(i, rst[i])
+
+        setter['running'] = False
+
+        for th in ths:
+            th.join()
 
 
 class TestJobQ(unittest.TestCase):

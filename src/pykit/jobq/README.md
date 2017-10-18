@@ -13,6 +13,7 @@
   - [jobq.JobManager](#jobqjobmanager)
   - [jobq.JobManager.put](#jobqjobmanagerput)
   - [jobq.JobManager.join](#jobqjobmanagerjoin)
+  - [jobq.JobManager.set_thread_num](#jobqjobmanagerset_thread_num)
 - [Author](#author)
 - [Copyright and License](#copyright-and-license)
 
@@ -165,6 +166,7 @@ stat returned format is:
         {
             'name': 'example.worker_foo',
             'input': {'size': 3, 'capa': 1024},
+            'nr_worker': 2,
             'coordinator': {'size': 3, 'capa': 1024}, # presents only when keep_order=True
         },
         ...
@@ -240,6 +242,36 @@ Wait for all worker to finish.
 
 **return**:
 None
+
+
+##  jobq.JobManager.set_thread_num
+
+**syntax**:
+`jobq.JobManager.set_thread_num(worker, n)`
+
+Change number of threads for a worker on the fly.
+
+If job manager has called `JobManager.join()` to exit,
+`set_thread_num` does nothing and just returns silently.
+
+**arguments**:
+
+-   `worker`:
+    is the callable passed in when creating JobManager.
+    It searches inside job manager for the worker.
+    If there is not a worker `is` the one passed in, it raise a
+    `JobWorkerNotFound` error.
+
+-   `n`:
+    specifies the expected number of threads for this `worker`.
+
+    New threads are created and started before this function returns.
+    The threads to remove will be stopped and removed after they finishes
+    the job they are currently handling.
+
+**return**:
+None
+
 
 #   Author
 

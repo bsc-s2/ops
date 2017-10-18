@@ -19,7 +19,7 @@ class TestStrutil(unittest.TestCase):
 
     def test_tokenize(self):
 
-        cases = (
+        base_cases = (
                 ('', [''], ''),
                 ('a', ['a'], ''),
                 ('a b', ['a', 'b'], ''),
@@ -35,10 +35,30 @@ class TestStrutil(unittest.TestCase):
 
                 ('foo "ab cd" "x y"', ['foo', '"ab cd"', '"x y"'], ''),
                 ('foo "ab cd" "x', ['foo', '"ab cd"'], 'discard incomplete'),
+
+                ('foo "\\"ab cd" "x', ['foo', '""ab cd"'], 'escape "'),
+                ('foo "\\\\"ab cd" "x', ['foo', '"\\"ab', 'cd" "x'], 'escape \\'),
+                ('foo "\\\\\\"ab cd" "x', ['foo', '"\\"ab cd"'], 'escape \\ "'),
+
+                ('a \\"bc "d e" "f',  ['a', '"bc', '"d e"'], ''),
+                ('a \\\\"bc "d e" "f',  ['a', '\\"bc "d', 'e" "f'], ''),
+                ('a \\\\\\"bc "d e" "f',  ['a', '\\"bc', '"d e"'], ''),
+
+                ('a "bc "d \\"f',  ['a', '"bc "d', '"f'], ''),
+                ('a "bc "d \\\\"f',  ['a', '"bc "d'], ''),
+                ('a "bc "d \\\\\\"f',  ['a', '"bc "d', '\\"f'], ''),
+
+                ('\\"bc "d "f',  ['"bc', '"d "f'], ''),
+                ('\\\\"bc "d "f',  ['\\"bc "d'], ''),
+                ('\\\\\\"bc "d "f',  ['\\"bc', '"d "f'], ''),
+
+                ('a "bc "d f\\"',  ['a', '"bc "d', 'f"'], ''),
+                ('a "bc "d f\\\\"',  ['a', '"bc "d'], ''),
+                ('a "bc "d f\\\\\\"',  ['a', '"bc "d', 'f\\"'], ''),
         )
 
-        for _in, _out, _mes in cases:
-            rst = strutil.tokenize(_in)
+        for _in, _out, _mes in base_cases:
+            rst = strutil.tokenize(_in, sep=' ', preserve=True)
             self.assertEqual(_out, rst,
                              ('input: {_in}, output: {_out}, expected: {rst},'
                               ' message: {_mes}').format(
@@ -47,6 +67,51 @@ class TestStrutil(unittest.TestCase):
                                  rst=repr(rst),
                                  _mes=_mes
                              ))
+
+        sep_cases = (
+                ('',              None,    True,   []),
+                (' a  b  c ',     None,    True,   ['a', 'b', 'c']),
+                (' a  "b  c" ',   None,    True,   ['a', '"b  c"']),
+                (' a  "b  c" ',   None,    False,  ['a', 'b  c']),
+                ('a b c',         None,    True,   ['a', 'b', 'c']),
+                ('"a b c"',       None,    True,   ['"a b c"']),
+                ('"a b c"',       None,    False,  ['a b c']),
+                ('a b"c d"',      None,    True,   ['a', 'b"c d"']),
+                ('a b"c d"',      None,    False,  ['a', 'bc d']),
+                ('a bcd',         'bc',    True,   ['a ', 'd']),
+                ('a "bc" d',      'bc',    True,   ['a "bc" d']),
+                ('a "bc" d',      'bc',    False,  ['a bc d']),
+                ('abcd',          'abcd',  True,   ['', '']),
+        )
+
+        for line, sep, preserve, rst_expected in sep_cases:
+            dd('in: ', line, sep)
+            rst = strutil.tokenize(line, sep=sep, quote='"', preserve=preserve)
+            dd('out: ', rst)
+            self.assertEqual(rst, rst_expected)
+
+        preserve_cases = (
+                ('""',                   '"',    True,    ['""']),
+                ('""',                   '"',    False,   ['']),
+                ('abc xd efx gh',        'x',    True,    ['abc', 'xd efx', 'gh']),
+                ('abc xd efx gh',        'x',    False,   ['abc', 'd ef', 'gh']),
+                ('ab cxd efx gh',        'x',    True,    ['ab', 'cxd efx', 'gh']),
+                ('ab cxd efx gh',        'x',    False,   ['ab', 'cd ef', 'gh']),
+                ('ab cxd efxgh',         'x',    True,    ['ab', 'cxd efxgh']),
+                ('ab cxd efxgh',         'x',    False,   ['ab', 'cd efgh']),
+                ('ab cxd yey fx gh',     'xy',   True,    ['ab', 'cxd yey fx', 'gh']),
+                ('ab cxd yey fx gh',     'xy',   False,   ['ab', 'cd yey f', 'gh']),
+                ('ab cxd yey f gh',      'xy',   True,    ['ab']),
+                ('ab cxd yey f gh',      'xy',   False,   ['ab']),
+                ('ab cxd xex f gh',      'x',    True,    ['ab']),
+                ('ab cxd xex f gh',      'x',    False,   ['ab']),
+        )
+
+        for line, quote, preserve, rst_expected in preserve_cases:
+            dd('in: ', line, quote, preserve)
+            rst = strutil.tokenize(line, sep=' ', quote=quote, preserve=preserve)
+            dd('out: ', rst)
+            self.assertEqual(rst, rst_expected)
 
     def test_line_pad(self):
 
@@ -265,8 +330,41 @@ class TestStrutil(unittest.TestCase):
 
             self.assertEqual(expected, rst)
 
+    def test_break_line(self):
+        case = [
+            ('a quick brown fox jumps over the lazy dog',        13,    ['a quick brown', 'fox jumps', 'over the lazy', 'dog']),
+            ('a quick\nbrown fox jumps over the lazy dog',       13,    ['a quick', 'brown fox', 'jumps over', 'the lazy dog']),
+            ('a quick\rbrown fox jumps over the lazy dog',       13,    ['a quick', 'brown fox', 'jumps over', 'the lazy dog']),
+            ('a quick brown fox jumps\r\nover the lazy dog',     13,    ['a quick brown', 'fox jumps', 'over the lazy', 'dog']),
+            ('a quick\nbrown\rfox jumps\r\nover the lazy dog',   13,    ['a quick', 'brown', 'fox jumps', 'over the lazy', 'dog']),
+            ('aquickbrownfoxjumpsoverthelazydog',                9,     ['aquickbrownfoxjumpsoverthelazydog']),
+            ('aquickbro',                                        9,     ['aquickbro']),
+            (' aquickbro',                                       9,     ['', 'aquickbro']),
+            ('  aquickbro',                                      9,     [' ', 'aquickbro']),
+            ('aquickbro ',                                       9,     ['aquickbro']),
+            ('aquickbro  ',                                      9,     ['aquickbro', ' ']),
+            ('aqu ick br',                                       9,     ['aqu ick', 'br']),
+            ('aqu ick br',                                       9.34,  ['aqu ick', 'br']),
+            ('apu   ick  br',                                    5,     ['apu  ', 'ick ', 'br']),
+            ('aqu ick br',                                       0,     ['aqu', 'ick', 'br']),
+            ('aqu ick br',                                       -1,    ['aqu', 'ick', 'br']),
+            ('',                                                 2,     []),
+            (' ',                                                2,     [' ']),
+            ('  ',                                               2,     ['  ']),
+            ('   ',                                              2,     ['  ']),
+            ('    ',                                             2,     ['  ', ' ']),
+        ]
+
+        for linestr, width, expected in case:
+            rst = strutil.break_line(linestr, width)
+            dd('case: ', linestr, width, expected)
+            dd('rst: ', rst)
+            self.assertEqual(rst, expected)
+
 
 class TestColoredString(unittest.TestCase):
+
+    cs = strutil.ColoredString
 
     def test_colorize_input(self):
 
@@ -286,50 +384,21 @@ class TestColoredString(unittest.TestCase):
                 (100, -100),
         )
 
+        print
+
         for v, total in cases:
             print strutil.colorize(v, total, str(v) + '/' + str(total))
 
-    def test_all(self):
+    def test_show_all_colors(self):
 
-        print '--- colorized string ---'
-
-        cc = strutil.ColoredString
-
-        # list all fading color
-        for i in range(0, 100, 5):
-            print strutil.colorize(i, 100),
-        print
-
-        # concat colored string with '+', like normal string
-        s = cc('danger', 'danger') + cc('warn', 'warn')
-        self.assertEqual(len('danger' 'warn'), len(s))
-
-        print s + 'jfksdl'
-
-        # list all colors
         for c in range(256):
             if c % 16 == 0:
                 print
-            print cc('{0:>3}'.format(c), c),
+            print self.cs('{0:>3}'.format(c), c),
+
+    def test_named_color(self):
+
         print
-
-        # colored string can be duplicated with '*', like normal string
-        p = (cc('danger', 'danger')
-             + cc('warn', 'warn')
-             + cc(' normal')) * 3
-        plen = len('danger' 'warn' ' normal') * 3
-        self.assertEqual(plen, len(p))
-        print p
-        print 'p*2:', p * 2
-
-        # re-render strutil.ColoredString
-        c = cc(p, 'warn')
-        print 'colorize with "warn":', c
-        print 'c*2:', c * 2
-        self.assertEqual(plen, len(c), 'original c does not change after *')
-
-        # no-color
-        print 'de-colored:', cc(p)
 
         # named color shortcuts
         print strutil.blue('blue'),
@@ -347,3 +416,81 @@ class TestColoredString(unittest.TestCase):
         print strutil.normal('normal'),
         print strutil.optimal('optimal'),
         print
+
+    def test_pading(self):
+
+        print
+        for i in range(0, 100, 5):
+            print strutil.colorize(i, 100),
+        print
+
+        for i in range(0, 100, 5):
+            print strutil.colorize(i, -100),
+        print
+
+    def test_length(self):
+
+        cases = (
+                '',
+                'string',
+                '幾時何時',
+                '\xf3',
+        )
+
+        for v in cases:
+            self.assertEqual(len(self.cs(v, 'warn')), len(v))
+
+    def test_add(self):
+
+        # concat colored string with '+', like normal string
+        s = self.cs('danger', 'danger') + self.cs('warn', 'warn')
+        self.assertEqual(len('danger' + 'warn'), len(s))
+
+        s += 'extra_string'
+        self.assertEqual(len('danger' + 'warn' + 'extra_string'), len(s))
+
+    def test_mul(self):
+
+        # colored string can be duplicated with '*', like normal string
+        s = (self.cs('danger', 'danger')
+             + self.cs('warn', 'warn')
+             + self.cs(' normal')) * 3
+
+        slen = len('danger' + 'warn' + ' normal') * 3
+        self.assertEqual(slen, len(s))
+
+        s *= 10
+        slen *= 10
+        self.assertEqual(slen, len(s))
+
+    def test_rerender(self):
+
+        print
+
+        # re-render strutil.ColoredString
+        s = 'danger rerender to warn'
+
+        c = self.cs(s, 'danger')
+        print 'colorize with "danger":', c
+
+        c = self.cs(c, 'warn')
+        print 'colorize with "warn"  :', c
+
+    def test_colored_prompt(self):
+
+        s = '[colored prompt]# '
+
+        prompt = self.cs(s, color='optimal', prompt=True)
+        not_prompt = self.cs(s, color='optimal', prompt=False)
+
+        self.assertEqual(str(prompt)[0], '\001')
+        self.assertEqual(str(prompt)[-1], '\002')
+        self.assertEqual(len(str(prompt)), len(str(not_prompt)) + 4)
+
+        prompt += 'whatever'
+        not_prompt += 'whatever'
+        self.assertEqual(len(str(prompt)), len(str(not_prompt)) + 4)
+
+        prompt *= 3
+        not_prompt *= 3
+        self.assertEqual(len(str(prompt)), len(str(not_prompt)) + 4*3)
