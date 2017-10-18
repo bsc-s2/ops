@@ -68,6 +68,33 @@ or by diff indexed(staged or cached) with HEAD(by passing argument `--cached`
 to it).
 
 
+## db-mkfs.sh
+
+It does everything required for a new db node:
+
+-   Make xfs FS on a device.
+-   Add a line to `/etc/fstab`.
+-   Mount all.
+-   Check space.
+
+Usage:
+
+```
+# It mkfs on /dev/sdb and requires its size >= 1200 GB
+sh db-mkfs.sh /dev/sdb 1200
+
+# force mkfs
+MKFS_FORCE=1 sh db-mkfs.sh /dev/sdb 1200
+
+# run this script without downloading:
+curl https://coding.net/u/drmingdrmer/p/ops/git/raw/master/bin/db-mkfs.sh | sh -s /dev/sdb 12000
+```
+
+Options:
+
+-   env `MKFS_FORCE=1` to force making FS on a device already with a FS.
+
+
 #   Author
 
 Zhang Yanpo (张炎泼) <drdr.xp@gmail.com>
