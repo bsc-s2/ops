@@ -164,7 +164,7 @@ Aws::S3::S3Client create_client(Aws::SDKOptions& options)
     config.region = Aws::Region::US_EAST_1;
     config.scheme = Aws::Http::Scheme::HTTP;
 
-    Aws::String endpoint("edge.bscstorage.com");
+    Aws::String endpoint(cfg.get_addr());
     config.endpointOverride = endpoint;
     config.connectTimeoutMs = 300000;
     config.requestTimeoutMs = 300000;

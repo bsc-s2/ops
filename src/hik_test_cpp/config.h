@@ -56,9 +56,9 @@ public:
         {
             string s;
             ifs >> s;
-            cout << s;
-            if(s.find("##") != string::npos)
+            if(s[0] == '#')
                 continue;
+            cout << s << endl;
             vector<string> s_vec = split_str(s, ",");
             for(auto itr = s_vec.begin(); itr != s_vec.end(); ++itr)
             {
@@ -176,6 +176,15 @@ public:
         auto itr = m_config.find("secret_key");
         if(itr == m_config.end())
             return "no such secret key";
+
+        return itr->second.c_str();
+    }
+
+    const char* get_addr()
+    {
+        auto itr = m_config.find("addr");
+        if(itr == m_config.end())
+            return "not found addr";
 
         return itr->second.c_str();
     }
