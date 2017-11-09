@@ -9,9 +9,10 @@ fi
 file_size=$1
 max_rps=$2
 
-bucket='edge-benchmark'
+bucket='xxx'
 access_key='xxx'
 secret_key='xxx'
+addr='xxx'
 
 operator_type='upload'
 thread_count='100'
