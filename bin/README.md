@@ -88,6 +88,7 @@ MKFS_FORCE=1 sh db-mkfs.sh /dev/sdb 1200
 
 # run this script without downloading:
 curl https://coding.net/u/drmingdrmer/p/ops/git/raw/master/bin/db-mkfs.sh | sh -s /dev/sdb 12000
+curl https://coding.net/u/drmingdrmer/p/ops/git/raw/master/bin/db-mkfs.sh | MKFS_FORCE=1 sh -s /dev/sdb 12000
 ```
 
 Options:
