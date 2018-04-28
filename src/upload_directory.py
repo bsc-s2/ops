@@ -1,489 +1,575 @@
 #!/usr/bin/env python2
 # coding: utf-8
 
-import datetime
-import errno
-import getopt
-import logging
+import argparse
 import os
 import sys
 import threading
 import time
+import urllib
+from datetime import datetime
 
+from pykit import awssign
 import yaml
 
-import boto3
-from boto3.s3.transfer import TransferConfig
-from botocore.client import Config
+import file_filter
+import token_bucket
+import util
+from pykit import http
 from pykit import jobq
+from pykit import threadutil
+from pykit import fsutil
 
-MB = 1024**2
-GB = 1024**3
+MB = 1024 ** 2
 
-mega = 1024.0 * 1024.0
-
-uploaded_lock = threading.RLock()
-
-uploaded_per_second = {
-    'start_time': time.time(),
-    'uploading': 0,
+ITER_STATUS = {
+    'iter_n': 0,
+    'iter_size': 0,
+    'marker': 0,
 }
 
-
-class RestrictUploadSpeed(object):
-
-    def __init__(self, fn):
-        self.fn = fn
-
-    def __call__(self, bytes_amount):
-
-        while True:
-
-            curr_tm = time.time()
-
-            with uploaded_lock:
-                if curr_tm - uploaded_per_second['start_time'] > 1:
-                    uploaded_per_second['start_time'] = curr_tm
-                    uploaded_per_second['uploading'] = 0
-
-            with uploaded_lock:
-                if uploaded_per_second['max_upload_bytes'] - uploaded_per_second['uploading'] > bytes_amount:
-                    uploaded_per_second['uploading'] += bytes_amount
-                    break
-
-            time.sleep(0.01)
-
-            logger.debug('about to sleep 10 millisecond to slow down, upload %d fn %s' % (
-                bytes_amount, self.fn))
-
-
-stat = {
-    'bytes_uploaded': 0,
-    'uploaded_files': 0,
-    'start_time': time.time(),
+UPLOAD_STATUS = {
+    'total_n': 0,
+    'total_size': 0,
+    'encoding_change': 0,
+    'exception_n': 0,
+    'exception_size': 0,
+    'not_need_n': 0,
+    'not_need_size': 0,
+    'upload_failed_n': 0,
+    'upload_failed_size': 0,
+    'compare_failed_n': 0,
+    'compare_failed_size': 0,
 }
 
-stat_lock = threading.RLock()
-flock = threading.RLock()
+THREAD_STATUS = {}
 
 
-def to_unicode(s):
-    if isinstance(s, str):
-        return s.decode('utf-8')
-
-    return s
+REAL_SPEED = [0] * 10
 
 
-def to_utf8(s):
-    if isinstance(s, unicode):
-        return s.encode('utf-8')
-
-    return s
+class DecodeError(Exception):
+    pass
 
 
-def _thread(func, args):
-    th = threading.Thread(target=func, args=args)
-    th.daemon = True
-    th.start()
+def iter_file():
+    filter_conf = cnf.get('FILTER_CONF', None)
 
-    return th
-
-
-def _mkdir(path):
     try:
-        os.makedirs(path, 0755)
-    except OSError as e:
-        if e[0] == errno.EEXIST and os.path.isdir(path):
-            pass
-        else:
-            raise
+        logger.info('start to iter file of: %s' % data_dir)
+
+        for dir in util.iter_dir(data_dir):
+            dir_file_list = util.get_dir_file_list(dir)
+
+            for f in dir_file_list:
+                f_stat = os.stat(f)
+                file_object = {
+                    'file_path': f,
+                    'size': f_stat.st_size,
+                    'last_modified_ts': f_stat.st_mtime,
+                    'mime_type': util.get_file_mime_type(f),
+                }
+
+                ITER_STATUS['iter_n'] += 1
+                ITER_STATUS['iter_size'] += file_object['size']
+                ITER_STATUS['marker'] = f
+
+                msg = file_filter.filter(
+                    {
+                        'key': file_object['file_path'],
+                        'size': file_object['size'],
+                        'content_type': file_object['mime_type'],
+                        'last_modified': datetime.utcfromtimestamp(
+                            file_object['last_modified_ts'])
+                    }, filter_conf, cnf['TIMEZONE'])
+
+                if msg != None:
+                    logger.info('will not upload file: %s, because: %s' %
+                                (file_object['file_path'], msg))
+                    continue
+
+                yield file_object
+
+            logger.info('iter %d file of: %s' %
+                        (len(dir_file_list), dir))
+
+        logger.info('finished to iter file of: %s' % data_dir)
+
+    except Exception as e:
+        logger.exception('failed to iter file of: %s, %s' %
+                         (data_dir, repr(e)))
 
 
-def _remove(path):
+def get_s3_file_info(s3_key):
     try:
-        os.remove(path)
-    except OSError as e:
-        if e[0] == errno.ENOENT or os.path.isdir(path):
-            pass
+        unicode_s3_key = util.to_unicode(
+            s3_key, cnf.get('ENCODINGS', []))
+    except Exception as e:
+        logger.warn('failed to decocode: %s' %
+                    util.str_to_hex(s3_key))
+        raise DecodeError('failed to decode: %s' % repr(e))
+
+    resp = s3_client.head_object(
+        Bucket=cnf['BUCKET_NAME'],
+        Key=unicode_s3_key,
+    )
+
+    s3_file_info = {
+        'size': resp['ContentLength'],
+        'content_type': resp['ContentType'],
+        'meta': resp['Metadata'],
+        'content_md5': resp['ETag'].lower().strip('"'),
+    }
+
+    return s3_file_info
+
+
+def get_upload_s3_key(result):
+    log_prefix = result['log_prefix']
+    file_path = result['file_object']['file_path']
+
+    sub_file_path = file_path[len(cnf['DATA_DIR']):]
+    sub_file_path = sub_file_path.lstrip('/')
+
+    sub_file_path_utf8_parts = []
+    for part in sub_file_path.split('/'):
+        sub_file_path_utf8_parts.append(
+            util.to_utf8(part, encodings=cnf.get('ENCODINGS', [])))
+
+    sub_file_path_utf8 = '/'.join(sub_file_path_utf8_parts)
+
+    sub_file_path_hex = util.str_to_hex(sub_file_path)
+    sub_file_path_utf8_hex = util.str_to_hex(sub_file_path_utf8)
+
+    s3_key = sub_file_path
+
+    if sub_file_path_hex != sub_file_path_utf8_hex:
+        logger.warn('%s file path is not utf8 encode: %s vs %s' %
+                    (log_prefix, sub_file_path_hex, sub_file_path_utf8_hex))
+
+        if cnf['UTF8_ENCODE_KEY']:
+            logger.info('%s change file path: %s to utf8' %
+                        (log_prefix, file_path))
+            s3_key = sub_file_path_utf8
+            UPLOAD_STATUS['encoding_change'] += 1
+
+    if len(cnf['KEY_PREFIX']) > 1:
+        s3_key = cnf['KEY_PREFIX'] + '/' + s3_key
+
+    return s3_key
+
+
+def check_if_need_upload(result, th_status):
+    if not cnf['CHECK_EXIST']:
+        return True
+
+    log_prefix = result['log_prefix']
+
+    file_object = result['file_object']
+    s3_key = result['s3_key']
+
+    try:
+        s3_file_info = get_s3_file_info(s3_key)
+
+    except DecodeError as e:
+        return True
+
+    except Exception as e:
+        if hasattr(e, 'message') and 'Not Found' in e.message:
+            logger.info('%s file: %s not found in s3, need to upload' %
+                        (log_prefix, s3_key))
+            return True
         else:
-            raise
+            logger.exception(('%s faied to get s3 file info when check ' +
+                              'if need to upload %s: %s') %
+                             (log_prefix, s3_key, repr(e)))
+            th_status['s3_get_error'] = th_status.get('s3_get_error', 0) + 1
+            return False
+
+    th_status['exist'] = th_status.get('exist', 0) + 1
+
+    if s3_file_info['size'] != file_object['size']:
+        th_status['size_not_equal'] = th_status.get('size_not_equal', 0) + 1
+        logger.info(('%s need to override file: %s, because size not equal, ' +
+                     'local_size: %d, s3_size: %d') %
+                    (log_prefix, s3_key, file_object['size'], s3_file_info['size']))
+        return True
+
+    if cnf['OVERRIDE']:
+        th_status['override'] = th_status.get('override', 0) + 1
+        return True
+    else:
+        return False
 
 
-def get_conf(conf_path):
+def _upload_data(result, th_status):
+    file_object = result['file_object']
+    s3_key = result['s3_key']
 
-    with open(conf_path) as f:
+    log_prefix = result['log_prefix']
+    file_path = file_object['file_path']
+
+    s3_request = {
+        'verb': 'PUT',
+        'uri': '/' + cnf['BUCKET_NAME'] + '/' + urllib.quote(s3_key),
+        'headers': {
+            'Host': cnf['ENDPOINT'],
+            'Content-Length': file_object['size'],
+            'Content-Type': file_object['mime_type'],
+            'X-Amz-Acl': cnf['FILE_ACL'],
+        },
+    }
+
+    s3_signer.add_auth(s3_request, sign_payload=False)
+
+    http_s3 = http.Client(cnf['ENDPOINT'], 80, timeout=60 * 60)
+
+    http_s3.send_request(s3_request['uri'],
+                         method=s3_request['verb'],
+                         headers=s3_request['headers'])
+
+    f = open(file_path, 'rb')
+
+    file_size = file_object['size']
+    uploaded_size = 0
+    while True:
+        tokens = min(file_size - uploaded_size, cnf['UPLOAD_CHUNK_SIZE'])
+        tb.get_tokens(tokens)
+
+        curr_second = int(time.time())
+        index = curr_second % len(REAL_SPEED)
+        next_index = (curr_second + 1) % len(REAL_SPEED)
+
+        REAL_SPEED[next_index] = 0
+        REAL_SPEED[index] += tokens
+
+        buf = f.read(tokens)
+
+        logger.info('%s read %d bytes from file: %s' %
+                    (log_prefix, len(buf), file_path))
+
+        if len(buf) != tokens:
+            logger.error(('%s failed to read file: %s,' +
+                          ' tokens: %d, data length: %d') %
+                         (log_prefix, file_path, tokens, len(buf)))
+            th_status['read_file_error'] = th_status.get(
+                'read_file_error', 0) + 1
+            return False
+
+        http_s3.send_body(buf)
+
+        logger.info('%s uploaded %d bytes for file: %s' %
+                    (log_prefix, len(buf), file_path))
+
+        uploaded_size += len(buf)
+
+        th_status['progress'] = (
+            uploaded_size, file_size, (uploaded_size + 1.0) / (file_size + 1))
+
+        if uploaded_size == file_size:
+            break
+
+    http_s3.read_response()
+
+    if http_s3.status != 200:
+        logger.error(('%s got invalid response from s3 when upload file to: %s,' +
+                      'status: %d, resp: %s') %
+                     (log_prefix, s3_key, http_s3.status, http_s3.read_body(1024)))
+        th_status['upload_s3_error'] = th_status.get('upload_s3_error', 0) + 1
+        return False
+
+    return True
+
+
+def upload_data(result, th_status):
+    log_prefix = result['log_prefix']
+    file_path = result['file_object']['file_path']
+
+    try:
+        succeed = _upload_data(result, th_status)
+
+        if not succeed:
+            result['pipe_failed'] = True
+            return False
+
+        return True
+
+    except Exception as e:
+        logger.exception('%s got exception when upload file %s: %s' %
+                         (log_prefix, file_path, repr(e)))
+
+        result['upload_failed'] = True
+        th_status['upload_exception'] = th_status.get(
+            'upload_exception', 0) + 1
+
+        return False
+
+
+def compare_file_info(result, s3_file_info, th_status):
+    log_prefix = result['log_prefix']
+    file_object = result['file_object']
+    file_path = file_object['file_path']
+
+    if file_object['size'] != s3_file_info['size']:
+        logger.error(('%s compare failed for file: %s, local file size: %d, ' +
+                      's3 file size: %d') %
+                     (log_prefix, file_path, file_object['size'],
+                      s3_file_info['size']))
+
+        th_status['compare_size_error'] = th_status.get(
+            'compare_size_error', 0) + 1
+        return False
+
+    if file_object['mime_type'].lower() != s3_file_info['content_type'].lower():
+        logger.error(('%s compare failed for file: %s, local content type: %s, ' +
+                      's3 content type: %s') %
+                     (log_prefix, file_path, file_object['mime_type'],
+                      s3_file_info['content_type']))
+
+        th_status['compare_type_error'] = th_status.get(
+            'compare_type_error', 0) + 1
+        return False
+
+    return True
+
+
+def compare_file(result, th_status):
+    log_prefix = result['log_prefix']
+    s3_key = result['s3_key']
+
+    try:
+        s3_file_info = get_s3_file_info(s3_key)
+
+    except Exception as e:
+        th_status['compare_s3_error'] = th_status.get(
+            'compare_s3_error', 0) + 1
+
+        logger.exception('%s got exception when get s3 file info %s: %s' %
+                         (log_prefix, s3_key, repr(e)))
+        return False
+
+    succeed = compare_file_info(result, s3_file_info, th_status)
+    if not succeed:
+        return False
+
+    return True
+
+
+def _upload_one_file(result, th_status):
+    log_prefix = result['log_prefix']
+    file_path = result['file_object']['file_path']
+
+    need = check_if_need_upload(result, th_status)
+    if not need:
+        logger.info('%s not need to upload file: %s' %
+                    (log_prefix, file_path))
+        result['not_need'] = True
+        return result
+
+    logger.info('%s start to upload file: %s' %
+                (log_prefix, file_path))
+
+    succeed = upload_data(result, th_status)
+    if not succeed:
+        result['download_failed'] = True
+        return result
+
+    succeed = compare_file(result, th_status)
+    if not succeed:
+        result['check_failed'] = True
+        return result
+
+    logger.info('%s finished to upload file: %s' %
+                (log_prefix, file_path))
+
+    return result
+
+
+def upload_one_file(file_object):
+    result = {
+        'file_object': file_object,
+    }
+
+    thread_name = threading.current_thread().getName()
+    THREAD_STATUS[thread_name] = THREAD_STATUS.get(thread_name, {})
+    th_status = THREAD_STATUS[thread_name]
+
+    try:
+        result['log_prefix'] = util.get_log_prefix(file_object['file_path'])
+
+        result['s3_key'] = get_upload_s3_key(result)
+
+        logger.info('%s about to upload file: %s to: %s' %
+                    (result['log_prefix'], file_object['file_path'],
+                     result['s3_key']))
+
+        th_status['total_n'] = th_status.get('total_n', 0) + 1
+
+        _upload_one_file(result, th_status)
+
+        if cnf['CLEAR_FILES']:
+            fsutil.remove(file_object['file_path'])
+
+        return result
+
+    except Exception as e:
+        logger.exception('got exception when process file: %s, %s' %
+                         (file_object['file_path'], repr(e)))
+        result['exception'] = True
+        th_status['exception'] = th_status.get('exception', 0) + 1
+
+        return result
+
+
+def upload_directory():
+    try:
+        sess = {'stop': False}
+
+        report_th = threadutil.start_thread(report, args=(sess,),
+                                            daemon=True)
+
+        jobq.run(iter_file(), [(upload_one_file, cnf['THREADS_NUM']),
+                               (update_upload_stat, 1),
+                               ])
+
+        sess['stop'] = True
+        report_th.join()
+
+        report_state()
+
+    except KeyboardInterrupt:
+        report_state()
+        sys.exit(0)
+
+
+def update_upload_stat(result):
+    file_object = result['file_object']
+    file_size = file_object['size']
+
+    UPLOAD_STATUS['total_n'] += 1
+    UPLOAD_STATUS['total_size'] += file_size
+
+    if 'exception' in result:
+        UPLOAD_STATUS['exception_n'] += 1
+        UPLOAD_STATUS['exception_size'] += file_size
+
+    if 'not_need' in result:
+        UPLOAD_STATUS['not_need_n'] += 1
+        UPLOAD_STATUS['not_need_size'] += file_size
+
+    if 'pipe_failed' in result:
+        UPLOAD_STATUS['upload_failed_n'] += 1
+        UPLOAD_STATUS['upload_failed_size'] += file_size
+
+    if 'compare_failed' in result:
+        UPLOAD_STATUS['compare_failed_n'] += 1
+        UPLOAD_STATUS['compare_failed_size'] += file_size
+
+
+def report_state():
+    os.system('clear')
+    print '----------------report-----------------'
+    print ('speed configuration:(MB)')
+    print ', '.join(['%d: %.1f' % (i, speeds[i]) for i in range(24)])
+
+    print ('iter status: total: %d, total size: %.3f (MB), marker: %s' %
+           (ITER_STATUS['iter_n'], ITER_STATUS['iter_size'] / 1.0 / MB,
+            ITER_STATUS['marker']))
+
+    curr_index = int(time.time()) % len(REAL_SPEED)
+    print ('real speeds: %s' %
+           ', '.join(['%.3f' %
+                      (REAL_SPEED[(i + curr_index + 2) %
+                                  len(REAL_SPEED)] / 1.0 / MB)
+                      for i in range(len(REAL_SPEED))]))
+
+    print ('upload status:  total: %d, size: %.3f (MB), encoding_change: %d' %
+           (UPLOAD_STATUS['total_n'], UPLOAD_STATUS['total_size'] / 1.0 / MB,
+            UPLOAD_STATUS['encoding_change']))
+
+    print ('            exception: %d, size: %.3f (MB)' %
+           (UPLOAD_STATUS['exception_n'], UPLOAD_STATUS['exception_size'] / 1.0 / MB))
+
+    print ('             not need: %d, size: %.3f (MB)' %
+           (UPLOAD_STATUS['not_need_n'], UPLOAD_STATUS['not_need_size'] / 1.0 / MB))
+
+    print ('        upload_failed: %d, size: %.3f (MB)' %
+           (UPLOAD_STATUS['upload_failed_n'],
+            UPLOAD_STATUS['upload_failed_size'] / 1.0 / MB))
+
+    print ('       compare failed: %d, size: %.3f (MB)' %
+           (UPLOAD_STATUS['compare_failed_n'],
+            UPLOAD_STATUS['compare_failed_size'] / 1.0 / MB))
+
+    print 'thread status:'
+
+    for k, v in THREAD_STATUS.iteritems():
+        print '%s: %s' % (k, repr(v))
+
+    print ''
+
+
+def report(sess):
+    while not sess['stop']:
+        report_state()
+        time.sleep(cnf['REPORT_INTERVAL'])
+
+
+def load_cli_args():
+    parser = argparse.ArgumentParser(
+        description='upload local directory to s3')
+    parser.add_argument('--conf_path', type=str,
+                        help='set the path of the conf file')
+
+    args = parser.parse_args()
+    return args
+
+
+def load_conf_from_file(path):
+    with open(path) as f:
         conf = yaml.safe_load(f.read())
-
-    conf['DATA_DIR'] = to_unicode(conf['DATA_DIR'])
-    conf['LOG_DIR'] = to_unicode(conf['LOG_DIR'])
 
     return conf
 
 
-def is_visible_dir(dir_name):
-    if dir_name.startswith('.'):
-        return False
-
-    return True
-
-
-def is_visible_file(file_name):
-    if file_name.startswith('.'):
-        return False
-
-    return True
-
-
-def get_iso_now():
-    datetime_now = datetime.datetime.utcnow()
-    return datetime_now.strftime('%Y%m%dT%H%M%SZ')
-
-
-def dir_iter(dir_name, base_len, key_prefix):
-    q = []
-    base_dir = dir_name.split('/')
-    q.append(base_dir)
-
-    while True:
-        if len(q) < 1:
-            break
-        dir_parts = q.pop(0)
-
-        files = os.listdir('/'.join(dir_parts))
-
-        for f in files:
-            _dir_parts = dir_parts[:]
-            _dir_parts.append(f)
-
-            if not is_visible_dir(f):
-                continue
-
-            parts = []
-            for d in _dir_parts:
-                if isinstance(d, unicode):
-                    parts.append(d)
-                    continue
-
-                try:
-                    d = d.decode('utf-8')
-                except UnicodeDecodeError:
-                    d = d.decode('cp1252')
-
-                parts.append(d)
-
-            if os.path.isdir('/'.join(parts)):
-                q.append(parts)
-
-        yield dir_parts, base_len, key_prefix
-
-
-def get_files_to_upload(dir_name, progress_file):
-
-    files = os.listdir(dir_name)
-    files_to_upload = {}
-
-    for f in files:
-        if not is_visible_file(f):
-            continue
-
-        file_name = os.path.join(dir_name, f)
-
-        if os.path.isfile(file_name):
-            files_to_upload[file_name] = True
-
-    fd = open(progress_file, 'a')
-    fd.close()
-
-    fd = open(progress_file)
-    while True:
-        line = fd.readline()
-        if line == '':
-            break
-        file_name = line.split()[0]
-        if file_name in files_to_upload:
-            files_to_upload.pop(file_name)
-
-    fd.close()
-
-    return files_to_upload
-
-
-def upload_one_file(file_name, base_len, key_prefix, s3_client):
-    file_parts = file_name.split('/')
-    key = os.path.join(key_prefix, '/'.join(file_parts[base_len:]))
-
-    info = {'local_size': os.stat(file_name).st_size, }
-
-    callback = None
-    if cnf['ENABLE_BANDWIDTH']:
-        callback = RestrictUploadSpeed(file_name)
-
-    config = TransferConfig(multipart_threshold=4 * GB,
-                            multipart_chunksize=512 * MB)
-
-    s3_client.upload_file(Filename=file_name,
-                          Bucket=cnf['BUCKET_NAME'],
-                          Key=key,
-                          Config=config,
-                          ExtraArgs={'ACL': cnf['FILE_ACL']},
-                          Callback=callback,
-                          )
-
-    logger.warn('have uploaded file %s' % file_name)
-
-    resp = s3_client.head_object(
-        Bucket=cnf['BUCKET_NAME'],
-        Key=key
-    )
-
-    logger.warn('have headed file %s' % file_name)
-
-    status = resp['ResponseMetadata']['HTTPStatusCode']
-    if status != 200:
-        logger.error('failed to put object: %s %d' % (key, status))
-        return
-
-    info['file_key'] = key
-    info['etag'] = resp['ETag']
-    info['resp_size'] = resp['ContentLength']
-
-    info['upload_time'] = get_iso_now()
-
-    return info
-
-
-def boto_client():
-    session = boto3.session.Session()
-
-    client = session.client(
-        's3',
-        use_ssl=False,
-        aws_access_key_id=cnf['ACCESS_KEY'],
-        aws_secret_access_key=cnf['SECRET_KEY'],
-        config=Config(signature_version='s3v4'),
-        region_name='us-east-1',
-        endpoint_url='http://s2.i.qingcdn.com',
-    )
-
-    return client
-
-
-def upload_one_directory(args):
-
-    s3_client = boto_client()
-
-    dir_parts, base_len, key_prefix = args
-    dir_name = '/'.join(dir_parts)
-    progress_file = os.path.join(dir_name, '.upload_progress')
-
-    files_to_upload = get_files_to_upload(dir_name, progress_file)
-    progress_f = open(progress_file, 'a')
-
-    print 'start to upload ' + dir_name
-    logger.info('start to upload ' + dir_name)
-
-    def _upload_file(file_name):
-
-        if cnf['ENABLE_SCHEDULE']:
-            check_schedule()
-
-        logger.info('start to upload file: %s' % file_name)
-
-        info = upload_one_file(file_name, base_len, key_prefix, s3_client)
-        if info is None:
-            return
-
-        if info['local_size'] != info['resp_size']:
-            logger.error(('file size not equal, local_size: %d,'
-                          'response size: %d') % (info['local_size'],
-                                                  info['resp_size']))
-            return
-
-        upload_time = get_iso_now()
-        line = '%s %s %s %d %s\n' % (
-            file_name, info['file_key'], info['etag'],
-            info['local_size'], upload_time)
-
-        line = to_utf8(line)
-
-        with flock:
-            progress_f.write(line)
-            total_progress_f.write(line)
-            total_progress_f.flush()
-
-        if cnf['CLEAR_FILES']:
-            _remove(file_name)
-
-        with stat_lock:
-            stat['bytes_uploaded'] += info['local_size']
-            stat['uploaded_files'] += 1
-
-    jobq.run(files_to_upload.keys(), [
-             (_upload_file, cnf['THREADS_NUM_FOR_FILE'])])
-
-    progress_f.close()
-
-    print 'finish to upload ' + dir_name
-    logger.info('finish to upload ' + dir_name)
-
-
-def report(sess):
-
-    last_report_tm = time.time()
-    last_uploaded_bytes = stat['bytes_uploaded']
-
-    while not sess['stop']:
-
-        ts_now = time.time()
-
-        with stat_lock:
-
-            time_used = ts_now - last_report_tm
-            added_bytes = stat['bytes_uploaded'] - last_uploaded_bytes
-
-            if added_bytes == 0 or time_used == 0:
-                continue
-
-            last_report_tm = ts_now
-            last_uploaded_bytes = stat['bytes_uploaded']
-
-            report_str = ('stat: bytes uploaded: %dMB, has uploaded files num: %d average speed: %fMB/s') % (
-                stat['bytes_uploaded'] / MB, stat['uploaded_files'], added_bytes / time_used / MB)
-
-        logger.info(report_str)
-        print report_str
-
-        time.sleep(cnf['REPORT_INTERVAL'])
-
-
-def run_once(dir_name, key_prefix):
-    if dir_name.endswith('/'):
-        print 'do not add / to the directory name: ' + dir_name
-        return
-
-    if not dir_name.startswith('/'):
-        print 'the directory name is not absolute path: ' + dir_name
-        return
-
-    if not os.path.exists(dir_name) or not os.path.isdir(dir_name):
-        print dir_name + ' is not exists or is not a directory'
-        return
-
-    base_len = len(dir_name.split('/'))
-
-    report_sess = {'stop': False}
-
-    report_th = _thread(report, (report_sess,))
-
-    jobq.run(dir_iter(dir_name, base_len, key_prefix),
-             [(upload_one_directory, cnf['THREADS_NUM_FOR_DIR'])])
-
-    report_sess['stop'] = True
-
-    report_th.join()
-
-
-def run_forever(dir_name, key_prefix):
-
-    while True:
-
-        prev_uploaded = stat['bytes_uploaded']
-
-        run_once(dir_name, key_prefix)
-
-        if stat['bytes_uploaded'] - prev_uploaded == 0:
-            time.sleep(60)
-
-
-def check_schedule():
-    start_h = int(cnf['SCHEDULE_START'].split(':')[0])
-    start_m = int(cnf['SCHEDULE_START'].split(':')[1])
-    stop_h = int(cnf['SCHEDULE_STOP'].split(':')[0])
-    stop_m = int(cnf['SCHEDULE_STOP'].split(':')[1])
-
-    start_m = start_m + start_h * 60
-    stop_m = stop_m + stop_h * 60
-
-    while True:
-        now = datetime.datetime.now()
-        now_h = now.hour
-        now_m = now.minute
-
-        now_m = now_m + now_h * 60
-
-        if start_m < stop_m:
-            if now_m >= start_m and now_m <= stop_m:
-                return
-            else:
-                wait_m = (start_m - now_m) % (60 * 24)
-                line = ('the schedule is from %s to %s,'
-                        ' need to wait %d hours and %d minutes') % (
-                    cnf['SCHEDULE_START'], cnf['SCHEDULE_STOP'],
-                    wait_m / 60, wait_m % 60)
-
-                print line
-                logger.warn(line)
-                time.sleep(60)
-
-        else:
-            if now_m > stop_m and now_m < start_m:
-                wait_m = (start_m - now_m) % (60 * 24)
-                line = ('the schedule is from %s to %s,'
-                        ' need to wait %d hours and %d minutes') % (
-                    cnf['SCHEDULE_START'], cnf['SCHEDULE_STOP'],
-                    wait_m / 60, wait_m % 60)
-
-                print line
-                logger.warn(line)
-                time.sleep(60)
-            else:
-                return
-
-
-def add_logger():
-
-    log_file = os.path.join(cnf['LOG_DIR'], 'upload-log-for' +
-                            cnf['DATA_DIR'].replace('/', '_') + '.log')
-
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
-
-    file_handler = logging.FileHandler(log_file)
-    formatter = logging.Formatter('[%(asctime)s, %(levelname)s] %(message)s')
-
-    file_handler.setFormatter(formatter)
-
-    logger.addHandler(file_handler)
-
-    return logger
+def load_conf(args):
+    conf_path = args.conf_path or '../conf/upload_directory.yaml'
+    conf = load_conf_from_file(conf_path)
+
+    return conf
 
 
 if __name__ == "__main__":
 
-    opts, args = getopt.getopt(sys.argv[1:], '', ['conf=', ])
-    opts = dict(opts)
+    cli_args = load_cli_args()
+    cnf = load_conf(cli_args)
 
-    if opts.get('--conf') is None:
-        conf_path = '../conf/upload_directory.yaml'
-    else:
-        conf_path = opts['--conf']
+    tb = token_bucket.TokenBucket(cnf['SPEED'])
 
-    cnf = get_conf(conf_path)
+    data_dir = cnf['DATA_DIR']
+    if not data_dir.startswith('/'):
+        print 'the directory name is not absolute path: ' + data_dir
+        sys.exit()
 
-    uploaded_per_second['max_upload_bytes'] = float(
-        cnf['BANDWIDTH']) * mega / 8
+    if not os.path.exists(data_dir) or not os.path.isdir(data_dir):
+        print data_dir + ' is not exists or is not a directory'
+        sys.exit()
 
-    _mkdir(cnf['LOG_DIR'])
+    speeds = tb.speed_in_hours
 
-    logger = add_logger()
+    s3_client = util.get_boto_client(
+        cnf['ACCESS_KEY'],
+        cnf['SECRET_KEY'],
+        endpoint=cnf['ENDPOINT'],
+    )
 
-    fn = os.path.join(cnf['LOG_DIR'], 'upload-progress-for' +
-                      cnf['DATA_DIR'].replace('/', '_') + '.log')
-    total_progress_f = open(fn, 'a')
+    s3_signer = awssign.Signer(cnf['ACCESS_KEY'],
+                               cnf['SECRET_KEY'])
 
-    if cnf['RUN_FOREVER']:
-        run_forever(cnf['DATA_DIR'], cnf['KEY_PREFIX'])
-    else:
-        run_once(cnf['DATA_DIR'], cnf['KEY_PREFIX'])
+    fsutil.makedirs(cnf['LOG_DIR'])
 
-    total_progress_f.close()
+    log_file_name = ('upload-log-for-%s.log' %
+                     cnf['DATA_DIR'].replace('/', '_'))
+    logger = util.add_logger(cnf['LOG_DIR'], log_file_name)
+
+    upload_directory()

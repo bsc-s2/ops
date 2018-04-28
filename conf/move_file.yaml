@@ -1,19 +1,19 @@
-ACCESS_KEY: 'your access key'
-SECRET_KEY: 'your secret key'
+ACCESS_KEY: 'xxx' # change it
+SECRET_KEY: 'xxx' # change it
 
-ENDPOINT: 'http://s2.i.qingcdn.com'
+ENDPOINT: 'http://ss.bscstorage.com'
 
 # 原文件所在的bucket
-SRC_BUCKET: 'test-bucket'
+SRC_BUCKET: 'xxx' # change it
 
 # 目的文件所在的bucket
-DEST_BUCKET: 'test-bucket'
+DEST_BUCKET: 'xxx' # change it
 
 # 文件名前缀替换，实现改变文件路径的效果，如以下配置会将
 # 文件'aaa/bbb/foo/bar.txt'重命名为'ccc/ddd/foo/bar.txt'
 # 这两个配置中的任何一个都不能是另一个的前缀
-OLD_PREFIX: 'aaa/bbb/'
-NEW_PREFIX: 'ccc/ddd/'
+OLD_PREFIX: 'aaa/bbb/' # change it
+NEW_PREFIX: 'ccc/ddd/' # change it
 
 # 设置从哪个文件以后开始，（不包含）
 START_MARKER: ''
@@ -28,7 +28,7 @@ NUM_LIMIT: null
 COPY_ACL: true
 
 # 是否删除原文件，如果为true, 则实现move效果，如果为false, 则实现copy效果
-DELETE: true
+DELETE: false
 
 # 设置线程个数
 THREADS_NUM: 20

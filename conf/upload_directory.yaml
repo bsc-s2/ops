@@ -1,39 +1,69 @@
-ACCESS_KEY: 'input_access_key'
-SECRET_KEY: 'input_secret_key'
-BUCKET_NAME: 'input_bucket_name'
-KEY_PREFIX: ''
-FILE_ACL: 'public-read'
+ACCESS_KEY: 'xxx' # change it
+SECRET_KEY: 'xxx' # change it
+BUCKET_NAME: 'xxx' # change it
+
+ENDPOINT: 'ss.bscstorage.com'
+
+FILE_ACL: 'private'
 
 # 上传文件的目录，该目录不加入key的前缀
-DATA_DIR: '/root/upload_directory'
+DATA_DIR: '/root/test/' # change it
 
-# 日志目录，自动生成以upload-log 和 upload-progress 前缀的文件
-LOG_DIR: '/tmp/upload_directory'
+KEY_PREFIX: ''
+
+CHECK_EXIST: true
+
+OVERRIDE: false
+
+# 日志存放目录，日志文件命名规则：upload-log-for-<directory name>.log
+LOG_DIR: './'
 
 # 已经上传的文件是否从目录清除掉
 CLEAR_FILES: false
 
-# 处理目录的并发线程数
-THREADS_NUM_FOR_DIR: 5
+THREADS_NUM: 10
 
-# 处理目录下的文件的并发线程数
-THREADS_NUM_FOR_FILE: 4
+UTF8_ENCODE_KEY: true
 
-# 是否启用 带宽限制功能
-ENABLE_BANDWIDTH: true
+ENCODINGS:
+        - 'utf-8'
 
-# 限制上传的带宽使用，单位Mb
-BANDWIDTH: 1024
 
 # 汇报上传总量等信息的时间间隔, 单位秒
-REPORT_INTERVAL: 30
+REPORT_INTERVAL: 3
 
-# 是否永久运行, 或者只运行一次
-RUN_FOREVER: true
+# 设置所在时区提前的秒数，如北京会提前8小时（28800秒）
+TIMEZONE: 28800
 
-# 是否启用 schedule功能，指定程序在某个时间段运行
-ENABLE_SCHEDULE: false
+#每次传输数据块大小
+UPLOAD_CHUNK_SIZE: 1024000
 
-# 程序运行的时间点
-SCHEDULE_START: '01:25'
-SCHEDULE_STOP: '23:30'
+
+FILTER_CONF:
+    #include_suffixes:
+        #- '.mp4'
+        #- '.mp5'
+        #- '.mp3'
+
+    #exclude_suffixes:
+        #- '.mp3'
+
+    #include_content_types:
+        #- 'image/jpeg'
+
+    #exclude_content_types:
+        #- 'image/jpeg'
+
+    #size_biger_than: 100000000
+
+    #size_smaller_than: 100000
+    #
+    #date_before: '2016-07-21 13:43:32'
+    #date_after: '2017-07-23 13:43:32'
+
+
+# 设置不同时段的上传速度,6点到20点10M，20点到22点20M，22点到6点30M
+SPEED:
+    '6': 0.15
+    '20': 0.15
+    '22': 0.15

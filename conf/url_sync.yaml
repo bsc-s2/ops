@@ -1,0 +1,41 @@
+ACCESS_KEY: 'xxx' # change it
+SECRET_KEY: 'xxx' # change it
+BUCKET_NAME: 'xxx' # change it
+ENDPOINT: 'ss.bscstorage.com'
+
+# 设置包含url列表的文件名, 文件中每一行包含两部分，url和key，用空格分开。
+# example:
+# http://www.google.com/somefile aaa/bbb/somefile
+URL_LIST_FILE: 'url_list.txt' # change it
+
+# 设置文件的权限
+FILE_ACL: 'private'
+
+# 设置是否查看需要同步的文件已经存在，如果是，且文件存在，则不再同步此文件
+CHECK_EXIST: true
+
+# 设置是否强制覆盖已经存在的文件（如果md5相同，设置为true也不会覆盖）
+OVERRIDE: false
+
+# 设置触发使用分片上传的文件大小阈值
+MULTIPART_THRESHOLD: 1024 * 1024 * 1024 * 10
+
+# 设置多少个线程同时同步文件
+THREADS_NUM: 10
+
+# 日志存放目录，日志文件命名规则：url-list-sync-for-<bucket name>.log
+LOG_DIR: './'
+
+# 同步状态信息汇报的时间间隔
+REPORT_INTERVAL: 2
+
+# 每次传输数据块大小
+PIPE_CHUNK_SIZE: 1024 * 1024
+
+TIMEZONE: 28800
+
+# 设置不同时段的同步速度,6点到20点10M，20点到22点20M，22点到6点30M
+SPEED:
+    '6': 10
+    '20': 20
+    '22': 30

@@ -1,0 +1,20 @@
+ACCESS_KEY: 'xxx' # change it
+SECRET_KEY: 'xxx' # change it
+
+BUCKET_NAME: 'xxx' # change it
+
+ENDPOINT: 'ss.bscstorage.com'
+
+PREFIX: ''
+
+# CND加速域名，只有列文件时才需要
+ACCELERATE_DOMAIN: 'xxx' # change it
+
+# 是否使用了虚拟host的访问方式，只有列文件时才需要
+VIRTUAL_HOST: false
+
+# 设置url的过期时间，只有列文件时才需要
+EXPIRESIN: 60 * 60
+
+# 设置所在时区提前的秒数，如北京会提前8小时（28800秒）
+TIME_ZONE: 28800

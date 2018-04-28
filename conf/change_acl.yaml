@@ -1,8 +1,8 @@
-ACCESS_KEY: 'ziw5dp1alvty9n47qksu'
-SECRET_KEY: 'V+ZTZ5u5wNvXb+KP5g0dMNzhMeWe372/yRKx4hZV'
-BUCKET_NAME: 'renzhi-test-bucket'
+ACCESS_KEY: 'xxx' # change it
+SECRET_KEY: 'xxx' # change it
+BUCKET_NAME: 'xxx' # change it
 
-ENDPOINT: 'http://s2.i.qingcdn.com'
+ENDPOINT: 'http://ss.bscstorage.com'
 
 # 只修改包含特定前缀的文件的ACL
 PREFIX: ''

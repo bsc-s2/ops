@@ -16,7 +16,7 @@ LOG_DIR: '/tmp/upload_directory'
 CACHE_DIR: '/tmp/cache_directory'
 
 # 已经上传的文件是否从目录清除掉
-CLEAR_FILES: false
+CLEAR_FILES: true
 
 # 处理目录的并发线程数
 THREADS_NUM_FOR_DIR: 5

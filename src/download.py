@@ -1,171 +1,115 @@
 #!/usr/bin/env python2
-# coding: utf-8
+# coding:utf-8
 
-import datetime
-import errno
-import getopt
-import logging
+import argparse
 import os
 import sys
 import threading
 import time
-import traceback
 
-import boto3
 import yaml
-from botocore.client import Config
 
+import file_filter
+import token_bucket
+import util
+from pykit import http
+from pykit import fsutil
 from pykit import jobq
+from pykit import threadutil
 
-MB = 1024.0**2
-GB = 1024.0**3
+MB = 1024 ** 2
 
-mega = 1024.0 * 1024.0
 
-stat = {
-    'bytes_downloaded': 0,
-    'download_start_time': time.time(),
-    'download_end_time': time.time(),
-    'bytes_downloaded_this_period': 0,
-    'bandwidth': 10,  # 10M
-    'exist': 0,
-    'failed': 0,
-    'total': 0,
+THREAD_STATUS = {}
+
+ITER_STATUS = {
+    'iter_n': 0,
+    'iter_size': 0,
+    'marker': '',
 }
 
-stat_lock = threading.RLock()
 
+DOWNLOAD_STATUS = {
+    'total_n': 0,
+    'total_size': 0,
+    'exception_n': 0,
+    'exception_size': 0,
+    'not_need_n': 0,
+    'not_need_size': 0,
+    'download_failed_n': 0,
+    'download_failed_size': 0,
+    'check_failed_n': 0,
+    'check_failed_size': 0,
+}
 
-class FileContentError(Exception):
-    pass
+REAL_SPEED = [0] * 10
 
 
 class LocalFileError(Exception):
     pass
 
 
-def _thread(func, args):
-    th = threading.Thread(target=func, args=args)
-    th.daemon = True
-    th.start()
-
-    return th
+class S3FileSizeError(Exception):
+    pass
 
 
-def _mkdir(path):
-    try:
-        os.makedirs(path, 0755)
-    except OSError as e:
-        if e[0] == errno.EEXIST and os.path.isdir(path):
-            pass
-        else:
-            raise
-
-
-def get_conf(conf_path):
-
-    with open(conf_path) as f:
-        conf = yaml.safe_load(f.read())
-
-    return conf
-
-
-def boto_client():
-    session = boto3.session.Session()
-
-    client = session.client(
-        's3',
-        use_ssl=False,
-        aws_access_key_id=cnf['ACCESS_KEY'],
-        aws_secret_access_key=cnf['SECRET_KEY'],
-        config=Config(signature_version='s3v4'),
-        region_name='us-east-1',
-        endpoint_url=cnf['ENDPOINT'],
-    )
-
-    return client
-
-
-def report(sess):
-
-    last_report_tm = time.time()
-    last_downloaded_bytes = stat['bytes_downloaded']
-
-    while not sess['stop']:
-        time.sleep(cnf['REPORT_INTERVAL'])
-
-        ts_now = time.time()
-        time_used = ts_now - last_report_tm
-        last_report_tm = ts_now
-
-        bytes_added = stat['bytes_downloaded'] - last_downloaded_bytes
-        last_downloaded_bytes = stat['bytes_downloaded']
-
-        current_speed = bytes_added / time_used / mega
-
-        average_speed = stat['bytes_downloaded_this_period'] / \
-            (stat['download_end_time'] - stat['download_start_time']) / mega
-
-        report_str = ('bytes_downloaded: %.3f MB, current speed: %.3f MB/s, average_speed: %.3f MB/s' %
-                      (stat['bytes_downloaded'] / mega, current_speed, average_speed))
-        report_str += '\n' + ('total: %d, exist: %d, failed: %d' %
-                              (stat['total'], stat['exist'], stat['failed']))
-
-        logger.info(report_str)
-        print report_str
-
-
-def get_time_to_sleep():
-    time_need = stat['bytes_downloaded_this_period'] / \
-        (stat['bandwidth'] * mega)
-    time_to_sleep = stat['download_start_time'] + time_need - time.time()
-
-    return time_to_sleep
+class S3GetError(Exception):
+    pass
 
 
 def iter_file():
-    num_limit = cnf['NUM_LIMIT']
+    prefix = cnf.get('PREFIX', '')
+    marker = cnf.get('MARKER', '')
+    end_marker = cnf.get('END_MARKER', None)
+    filter_conf = cnf.get('FILTER_CONF', None)
 
-    start_marker = cnf['START_MARKER']
-    end_marker = cnf['END_MARKER']
-
-    marker = start_marker
-    n = 0
+    logger.info('start to iter file from: ' + repr(marker))
 
     try:
-        while True:
-            resp = client.list_objects(
-                Bucket=cnf['BUCKET_NAME'],
-                Marker=marker,
-                Prefix=cnf['PREFIX'],
-            )
+        for content in util.iter_file(s3_client, cnf['BUCKET_NAME'],
+                                      prefix=prefix, marker=marker):
+            key_name = content['Key']
 
-            if 'Contents' not in resp:
-                break
+            if isinstance(key_name, unicode):
+                key_name = key_name.encode('utf-8')
 
-            for content in resp['Contents']:
-                if num_limit is not None and n >= num_limit:
-                    return
+            if end_marker is not None and key_name >= end_marker:
+                logger.info('iter file end, end maker: %s reached' %
+                            end_marker)
+                return
 
-                if end_marker is not None and content['Key'] >= end_marker:
-                    return
+            ITER_STATUS['iter_n'] += 1
+            ITER_STATUS['iter_size'] += content['Size']
+            ITER_STATUS['marker'] = key_name
 
-                yield {
-                    'key_name': content['Key'],
-                    'etag': content['ETag'],
-                    'last_modified': content['LastModified'],
-                    'size': content['Size'],
-                }
+            file_object = {
+                's3_key': key_name,
+                'key': util.to_utf8(key_name,
+                                    encodings=cnf.get('ENCODINGS', [])),
+                'etag': content['ETag'].lower().strip('"'),
+                'last_modified': content['LastModified'],
+                'size': content['Size'],
+            }
 
-                n += 1
-                marker = content['Key']
+            msg = file_filter.filter(file_object, filter_conf, cnf['TIMEZONE'])
+
+            if msg != None:
+                logger.info('will not download file: %s, because: %s' %
+                            (file_object['key'], msg))
+                continue
+
+            yield file_object
+
+        logger.info('finished to iter file')
 
     except Exception as e:
-        logger.error('failed to iter file: ' + traceback.format_exc())
-        print 'failed to iter file: ' + repr(e)
+        logger.exception('failed to iter file: ' + repr(e))
 
 
-def get_file_path(key_name):
+def get_local_path(key_name):
+    if isinstance(key_name, unicode):
+        key_name = key_name.encode('utf-8')
+
     if not cnf['USE_FULL_NAME']:
         key_name = key_name[len(cnf['PREFIX']):]
 
@@ -177,235 +121,351 @@ def get_file_path(key_name):
     return os.path.join(cnf['DOWNLOAD_BASE_DIR'], key_name)
 
 
-def check_local_file(file_path, result):
-    is_dir = os.path.isdir(file_path)
+def check_if_need_download(result, th_status):
+    log_prefix = result['log_prefix']
+    key = result['file_object']['key']
+    s3_key = result['file_object']['s3_key']
 
-    if file_path.endswith('/'):
-        is_file = os.path.isfile(os.path.split(file_path)[0])
-    else:
-        is_file = os.path.isfile(file_path)
+    if s3_key.endswith('/'):
+        if result['file_object']['size'] != 0:
+            raise S3FileSizeError('size of file: %s, is not 0' % key)
 
-    if file_path.endswith('/'):
-        if is_file:
-            raise LocalFileError(
-                'local file: %s should be a directory' % file_path[:-1])
-
-        if not is_dir:
-            _mkdir(file_path)
-    else:
-        if is_dir:
-            raise LocalFileError(
-                'local file: %s should be a file' % file_path)
-        if not is_file:
-            _mkdir(os.path.split(file_path)[0])
-
-    if file_path.endswith('/'):
-        logger.info('do not need to download, the file path is: ' + file_path)
+        logger.info('%s do not need to download directory file: %s' %
+                    (log_prefix, key))
         return False
 
-    if is_file:
-        file_stat = os.stat(file_path)
+    local_path = result['local_path']
 
-        local_mtime = file_stat.st_mtime
-        local_size = file_stat.st_size
+    if os.path.isdir(local_path):
+        raise LocalFileError('local path: %s, is a dir, key is: %s' %
+                             (local_path, key))
 
-        remote_mtime = time.mktime(
-            result['file_info']['last_modified'].utctimetuple()) + cnf['TIME_ZONE']
-        remote_size = result['file_info']['size']
+    if not os.path.isfile(local_path):
+        fsutil.makedirs(os.path.split(local_path)[0])
+        return True
 
-        if local_mtime > remote_mtime and local_size == remote_size:
-            result['file_exists'] = True
-            logger.info(
-                'do not need to download, the file: %s exists' % file_path)
-            return False
+    file_stat = os.stat(local_path)
+
+    local_size = file_stat.st_size
+    remote_size = result['file_object']['size']
+
+    if local_size != remote_size:
+        return True
+
+    local_mtime = file_stat.st_mtime
+
+    remote_last_modified = result['file_object']['last_modified']
+    remote_mtime = time.mktime(
+        remote_last_modified.utctimetuple()) + cnf['TIMEZONE']
+
+    if local_mtime < remote_mtime:
+        return True
+
+    if cnf['OVERRIDE']:
+        th_status['override'] = th_status.get('override', 0) + 1
+        return True
+
+    logger.info('%s do not need to download exist file: %s' %
+                (log_prefix, key))
+    return False
+
+
+def download_to_file(result, http_conn, th_status):
+    log_prefix = result['log_prefix']
+    local_path = result['local_path']
+    key = result['file_object']['key']
+
+    f = open(local_path, 'wb')
+
+    body_size = int(http_conn.headers['content-length'])
+    download_size = 0
+
+    while True:
+        tokens = min(body_size - download_size, cnf['DOWNLOAD_CHUNK_SIZE'])
+        tb.get_tokens(tokens)
+
+        curr_second = int(time.time())
+        index = curr_second % len(REAL_SPEED)
+        next_index = (curr_second + 1) % len(REAL_SPEED)
+
+        REAL_SPEED[next_index] = 0
+        REAL_SPEED[index] += tokens
+
+        buf = http_conn.read_body(tokens)
+
+        logger.info('%s download %d bytes for file: %s' %
+                    (log_prefix, len(buf), key))
+
+        if len(buf) != tokens:
+            logger.error('%s read body error, tokens: %d, buf length: %d' %
+                         (log_prefix, tokens, len(buf)))
+            th_status['read_body_error'] = th_status.get(
+                'read_body_error', 0) + 1
+            raise S3GetError('read body error')
+
+        f.write(buf)
+
+        download_size += tokens
+
+        th_status['progress'] = (
+            download_size, body_size, (download_size + 1.0) / (body_size + 1))
+
+        if download_size == body_size:
+            break
+
+    f.close()
+    return
+
+
+def download_data(result, th_status):
+    log_prefix = result['log_prefix']
+    s3_key = result['file_object']['s3_key']
+
+    signed_url = s3_client.generate_presigned_url(
+        'get_object',
+        Params={
+            'Bucket': cnf['BUCKET_NAME'],
+            'Key': util.to_unicode(s3_key,
+                                   encodings=cnf.get('ENCODINGS', [])),
+        },
+        ExpiresIn=60 * 60 * 12,
+    )
+
+    host, port, uri = util.parse_url(signed_url)
+
+    h = http.Client(host, port, timeout=60 * 60)
+    h.send_request(uri)
+    h.read_response()
+
+    if h.status != 200:
+        error_msg = h.read_body(1024)
+        logger.error('%s got invalid response from s3: %s, %s' %
+                     (log_prefix, h.status, error_msg))
+        raise S3GetError('invalid s3 response')
+
+    download_to_file(result, h, th_status)
+    return True
+
+
+def check_file(result, th_status):
+    log_prefix = result['log_prefix']
+    local_path = result['local_path']
+
+    if not os.path.isfile(local_path):
+        logger.error('%s the downloaded file is not a file: %s' %
+                     (log_prefix, local_path))
+        return False
+
+    file_stat = os.stat(local_path)
+
+    local_size = file_stat.st_size
+    remote_size = result['file_object']['size']
+
+    if local_size != remote_size:
+        logger.error('%s the downloaded file size: %d is not: %d' %
+                     (log_prefix, local_size, remote_size))
+        return False
 
     return True
 
 
-def download_file(file_info):
+def _download_one_file(result, th_status):
+    log_prefix = result['log_prefix']
+    key = result['file_object']['key']
+
+    need = check_if_need_download(result, th_status)
+    if not need:
+        logger.info('%s not need to download file: %s' %
+                    (log_prefix, key))
+        result['not_need'] = True
+        return result
+
+    logger.info('%s start to download file: %s' %
+                (log_prefix, key))
+
+    succeed = download_data(result, th_status)
+    if not succeed:
+        result['download_failed'] = True
+        return result
+
+    succeed = check_file(result, th_status)
+    if not succeed:
+        result['check_failed'] = True
+        return result
+
+    logger.info('%s finished to download file: %s' %
+                (log_prefix, key))
+
+    return result
+
+
+def download_one_file(file_object):
     result = {
-        'file_info': file_info,
+        'file_object': file_object,
     }
+
+    thread_name = threading.current_thread().getName()
+    THREAD_STATUS[thread_name] = THREAD_STATUS.get(thread_name, {})
+    th_status = THREAD_STATUS[thread_name]
+
     try:
-        if cnf['ENABLE_SCHEDULE']:
-            check_schedule()
+        result['log_prefix'] = util.get_log_prefix(file_object['key'])
+        result['local_path'] = get_local_path(file_object['s3_key'])
 
-        time_to_sleep = get_time_to_sleep()
-        if time_to_sleep > 0:
-            logger.info('about to sleep %.3f seconds to slow down' %
-                        time_to_sleep)
-            time.sleep(time_to_sleep)
+        logger.info('%s about to download file: %s to: %s' %
+                    (result['log_prefix'], result['file_object']['key'],
+                     result['local_path']))
 
-        file_path = get_file_path(file_info['key_name'])
+        th_status['total_n'] = th_status.get('total_n', 0) + 1
 
-        if file_path.endswith('/') and file_info['size'] != 0:
-            raise FileContentError(
-                'the length of file: %s is not 0' % file_info['key_name'])
-
-        need_to_download = check_local_file(file_path, result)
-        if not need_to_download:
-            return result
-
-        logger.info('start download file: %s to path: %s' %
-                    (file_info['key_name'], file_path))
-
-        client.download_file(cnf['BUCKET_NAME'],
-                             file_info['key_name'], file_path)
+        _download_one_file(result, th_status)
 
         return result
 
     except Exception as e:
-        logger.error('failed to download file: %s, %s' %
-                     (repr(file_info), traceback.format_exc()))
-        print 'failed to download file: %s, %s' % (repr(file_info), repr(e))
-        result['error'] = True
+        logger.exception('got exception when process file: %s, %s' %
+                         (file_object['key'], repr(e)))
+        result['exception'] = True
+        th_status['exception'] = th_status.get('exception', 0) + 1
+
         return result
 
 
-def update_stat(result):
-    with stat_lock:
-        stat['total'] += 1
+def update_download_stat(result):
+    file_object = result['file_object']
+    file_size = file_object['size']
 
-        if result.get('error') == True:
-            stat['failed'] += 1
-            return
+    DOWNLOAD_STATUS['total_n'] += 1
+    DOWNLOAD_STATUS['total_size'] += file_size
 
-        if result.get('file_exists') == True:
-            stat['exist'] += 1
-            return
+    if 'exception' in result:
+        DOWNLOAD_STATUS['exception_n'] += 1
+        DOWNLOAD_STATUS['exception_size'] += file_size
 
-        stat['bytes_downloaded'] += result['file_info']['size']
-        stat['bytes_downloaded_this_period'] += result['file_info']['size']
-        stat['download_end_time'] = time.time()
+    if 'not_need' in result:
+        DOWNLOAD_STATUS['not_need_n'] += 1
+        DOWNLOAD_STATUS['not_need_size'] += file_size
 
+    if 'download_failed' in result:
+        DOWNLOAD_STATUS['download_failed_n'] += 1
+        DOWNLOAD_STATUS['download_failed_size'] += file_size
 
-def run_one_turn():
-
-    logger.warn('one turn started')
-    print 'one turn started'
-
-    report_sess = {'stop': False}
-
-    with stat_lock:
-        stat['download_start_time'] = time.time()
-        stat['bytes_downloaded_this_period'] = 0
-
-        stat['bytes_downloaded'] = 0
-        stat['exist'] = 0
-        stat['failed'] = 0
-        stat['total'] = 0
-
-    report_th = _thread(report, (report_sess,))
-
-    jobq.run(iter_file(),
-             [(download_file, cnf['THREADS_NUM_FOR_DOWNLOAD']),
-              (update_stat, 1),
-              ])
-
-    report_sess['stop'] = True
-
-    report_th.join()
+    if 'check_failed' in result:
+        DOWNLOAD_STATUS['check_failed_n'] += 1
+        DOWNLOAD_STATUS['check_failed_size'] += file_size
 
 
-def run_forever():
+def report_state():
+    os.system('clear')
+    print '----------------report-----------------'
+    print ('speed configuration:(MB)')
+    print ', '.join(['%d: %.2f' % (i, speeds[i]) for i in range(24)])
 
-    while True:
-        run_one_turn()
-        time.sleep(60)
+    print ('iter status: total: %d, total size: %.3f (MB), marker: %s' %
+           (ITER_STATUS['iter_n'], ITER_STATUS['iter_size'] / 1.0 / MB,
+            ITER_STATUS['marker']))
 
+    curr_index = int(time.time()) % len(REAL_SPEED)
+    print ('real speeds: %s' %
+           ', '.join(['%.3f' %
+                      (REAL_SPEED[(i + curr_index + 2) %
+                                  len(REAL_SPEED)] / 1.0 / MB)
+                      for i in range(len(REAL_SPEED))]))
 
-def check_schedule():
-    start_h = int(cnf['SCHEDULE_START'].split(':')[0])
-    start_m = int(cnf['SCHEDULE_START'].split(':')[1])
-    stop_h = int(cnf['SCHEDULE_STOP'].split(':')[0])
-    stop_m = int(cnf['SCHEDULE_STOP'].split(':')[1])
+    print ('download status: total: %d, size: %.3f (MB)' %
+           (DOWNLOAD_STATUS['total_n'], DOWNLOAD_STATUS['total_size'] / 1.0 / MB))
 
-    start_m = start_m + start_h * 60
-    stop_m = stop_m + stop_h * 60
+    print ('             exception: %d, size: %.3f (MB)' %
+           (DOWNLOAD_STATUS['exception_n'], DOWNLOAD_STATUS['exception_size'] / 1.0 / MB))
 
-    while True:
-        now = datetime.datetime.now()
-        now_h = now.hour
-        now_m = now.minute
+    print ('              not need: %d, size: %.3f (MB)' %
+           (DOWNLOAD_STATUS['not_need_n'], DOWNLOAD_STATUS['not_need_size'] / 1.0 / MB))
 
-        now_m = now_m + now_h * 60
+    print ('       download failed: %d, size: %.3f (MB)' %
+           (DOWNLOAD_STATUS['download_failed_n'],
+            DOWNLOAD_STATUS['download_failed_size'] / 1.0 / MB))
 
-        if start_m < stop_m:
-            if now_m >= start_m and now_m <= stop_m:
-                return
-            else:
-                wait_m = (start_m - now_m) % (60 * 24)
-                line = ('the schedule is from %s to %s,'
-                        ' need to wait %d hours and %d minutes') % (
-                    cnf['SCHEDULE_START'], cnf['SCHEDULE_STOP'],
-                    wait_m / 60, wait_m % 60)
+    print ('          check failed: %d, size: %.3f (MB)' %
+           (DOWNLOAD_STATUS['check_failed_n'],
+            DOWNLOAD_STATUS['check_failed_size'] / 1.0 / MB))
 
-                print line
-                logger.warn(line)
-                time.sleep(60)
+    print 'thread status:'
 
-                with stat_lock:
-                    stat['download_start_time'] = time.time()
-                    stat['bytes_downloaded_this_period'] = 0
+    for k, v in THREAD_STATUS.iteritems():
+        print '%s: %s' % (k, repr(v))
 
-        else:
-            if now_m > stop_m and now_m < start_m:
-                wait_m = (start_m - now_m) % (60 * 24)
-                line = ('the schedule is from %s to %s,'
-                        ' need to wait %d hours and %d minutes') % (
-                    cnf['SCHEDULE_START'], cnf['SCHEDULE_STOP'],
-                    wait_m / 60, wait_m % 60)
-
-                print line
-                logger.warn(line)
-                time.sleep(60)
-
-                with stat_lock:
-                    stat['download_start_time'] = time.time()
-                    stat['bytes_downloaded_this_period'] = 0
-            else:
-                return
+    print ''
 
 
-def add_logger():
+def report(sess):
+    while not sess['stop']:
+        report_state()
+        time.sleep(cnf['REPORT_INTERVAL'])
 
-    log_file = os.path.join(cnf['LOG_DIR'], 'download-log-for-' +
-                            cnf['BUCKET_NAME'] + '.log')
 
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
+def download():
+    try:
+        sess = {'stop': False}
 
-    file_handler = logging.FileHandler(log_file)
-    formatter = logging.Formatter('[%(asctime)s, %(levelname)s] %(message)s')
+        report_th = threadutil.start_thread(report, args=(sess,),
+                                            daemon=True)
 
-    file_handler.setFormatter(formatter)
+        jobq.run(iter_file(), [(download_one_file, cnf['THREADS_NUM']),
+                               (update_download_stat, 1),
+                               ])
 
-    logger.addHandler(file_handler)
+        sess['stop'] = True
 
-    return logger
+        report_th.join()
+
+        report_state()
+
+    except KeyboardInterrupt:
+        report_state()
+        sys.exit(0)
+
+
+def load_cli_args():
+    parser = argparse.ArgumentParser(description='dwonload files from s3')
+    parser.add_argument('--conf_path', type=str,
+                        help='set the path of the conf file')
+
+    args = parser.parse_args()
+    return args
+
+
+def load_conf_from_file(path):
+    with open(path) as f:
+        conf = yaml.safe_load(f.read())
+
+    return conf
+
+
+def load_conf(args):
+    conf_path = args.conf_path or '../conf/download.yaml'
+    conf = load_conf_from_file(conf_path)
+
+    return conf
 
 
 if __name__ == "__main__":
 
-    opts, args = getopt.getopt(sys.argv[1:], '', ['conf=', ])
-    opts = dict(opts)
+    cli_args = load_cli_args()
+    cnf = load_conf(cli_args)
 
-    if opts.get('--conf') is None:
-        conf_path = '../conf/download.yaml'
-    else:
-        conf_path = opts['--conf']
+    tb = token_bucket.TokenBucket(cnf['SPEED'])
 
-    cnf = get_conf(conf_path)
+    speeds = tb.speed_in_hours
 
-    client = boto_client()
+    s3_client = util.get_boto_client(
+        cnf['ACCESS_KEY'],
+        cnf['SECRET_KEY'],
+        endpoint=cnf['ENDPOINT'],
+    )
 
-    stat['bandwidth'] = float(cnf['BANDWIDTH'])
+    fsutil.makedirs(cnf['LOG_DIR'])
 
-    _mkdir(cnf['LOG_DIR'])
+    log_file_name = 'download-log-for-%s.log' % cnf['BUCKET_NAME']
+    logger = util.add_logger(cnf['LOG_DIR'], log_file_name)
 
-    logger = add_logger()
-
-    if cnf['RUN_FOREVER']:
-        run_forever()
-    else:
-        run_one_turn()
+    download()

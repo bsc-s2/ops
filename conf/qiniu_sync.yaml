@@ -1,13 +1,13 @@
-ALI_ACCESS_KEY: 'xxx' # change it
-ALI_SECRET_KEY: 'xxx' # change it
-ALI_BUCKET_NAME: 'xxx' # change it
-ALI_ENDPOINT: 'oss-cn-shanghai.aliyuncs.com' # change it
-
+QINIU_ACCESS_KEY: 'xxx' # change it
+QINIU_SECRET_KEY: 'xxx' # change it
+QINIU_BUCKET_NAME: 'xxx' # change it
+QINIU_BUCKET_DOMAIN: 'os171mc3w.bkt.clouddn.com' # change it
 
 BAISHAN_ACCESS_KEY: 'xxx' # change it
 BAISHAN_SECRET_KEY: 'xxx' # change it
 BAISHAN_BUCKET_NAME: 'xxx' # change it
 BAISHAN_ENDPOINT: 'ss.bscstorage.com'
+
 
 # 只同步包含特定前缀的文件
 PREFIX: ''
@@ -16,22 +16,24 @@ START_MARKER: ''
 
 END_MARKER: null
 
+MULTIPART_THRESHOLD: 1024 * 1024 * 1024 * 10
+
 # 设置文件的权限
 FILE_ACL: 'private'
 
 # 设置是否查看需要同步的文件已经存在，如果是，且文件存在，则不再同步此文件
 CHECK_EXIST: true
 
-# 设置是否强制覆盖已经存在的文件（如果md5相同，设置为true也不会覆盖）
-OVERRIDE: false
-
-# 设置触发使用分片上传的文件大小阈值
-MULTIPART_THRESHOLD: 1024 * 1024 * 1024 * 10
+# 设置是否查看需要同步的文件已经存在，如果是，且文件存在，则不再同步此文件
+CHECK_EXIST: true
 
 # 设置多少个线程同时同步文件
 THREADS_NUM: 10
 
-# 日志存放目录，日志文件命名规则：ali-sync-for-<ali bucket name>.log
+ENCODINGS:
+    - 'utf-8'
+
+# 日志存放目录，日志文件命名规则：qiniu-sync-for-<qiniu bucket name>.log
 LOG_DIR: './'
 
 # 同步状态信息汇报的时间间隔
@@ -39,12 +41,10 @@ REPORT_INTERVAL: 2
 
 UTF8_ENCODE_KEY: true
 
-ENCODINGS:
-    - 'utf-8'
-
 # 每次传输数据块大小
-PIPE_CHUNK_SIZE: 102400
+PIPE_CHUNK_SIZE: 1024 * 1024
 
+# 设置所在时区提前的秒数，如北京会提前8小时（28800秒）
 TIMEZONE: 28800
 
 FILTER_CONF:
@@ -58,6 +58,12 @@ FILTER_CONF:
         #- '.mp3'
         #- '.pages'
 
+    #include_content_types:
+        #- 'mage/jpEg'
+
+    #exclude_content_types:
+        #- 'image/jpEg'
+
     #size_biger_than: 1000
 
     #size_smaller_than: 100000
@@ -65,8 +71,7 @@ FILTER_CONF:
     #date_before: '2017-07-28 16:23:32'
     #date_after: '2017-07-28 16:23:32'
 
-
-# 设置不同时段的同步速度,6点到20点10M，20点到22点20M，22点到6点30M
+# 设置不同时段的下载速度,6点到20点10M，20点到22点20M，22点到6点30M
 SPEED:
     '6': 10
     '20': 20
