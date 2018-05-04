@@ -126,7 +126,7 @@ def load_progress():
 
 
 def iter_files():
-    marker = cnf.get('MARKER', '')
+    marker = cnf.get('START_MARKER', '')
     end_marker = cnf.get('END_MARKER', None)
     filter_conf = cnf.get('FILTER_CONF', None)
 

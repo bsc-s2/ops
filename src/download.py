@@ -59,7 +59,7 @@ class S3GetError(Exception):
 
 def iter_file():
     prefix = cnf.get('PREFIX', '')
-    marker = cnf.get('MARKER', '')
+    marker = cnf.get('START_MARKER', '')
     end_marker = cnf.get('END_MARKER', None)
     filter_conf = cnf.get('FILTER_CONF', None)
 
