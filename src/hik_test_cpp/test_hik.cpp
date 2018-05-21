@@ -84,7 +84,7 @@ void download_file(Aws::S3::S3Client s3_client, Aws::String file_path)
     gettimeofday(&tv_begin, NULL);
 
     Aws::S3::Model::GetObjectRequest object_request;
-    std::cout << "---------------------download file-------" << key << std::endl;
+    std::cout << "---------------------download file-------" << file_path << std::endl;
     object_request.WithBucket(cfg.get_bucket()).WithKey(file_path);
 
     auto get_object_outcome = s3_client.GetObject(object_request);
@@ -99,7 +99,7 @@ void download_file(Aws::S3::S3Client s3_client, Aws::String file_path)
         succ_count++;
         if(cfg.open_log()) fs_log << "begin_time:"<< tm_to_str(tv_begin)
                                   << " end_time:" << tm_to_str(tv_end)
-                                  << " key:" << std::left <<  key
+                                  << " key:" << std::left << file_path
                                   << " used_ms:" << std::left << ms
                                   << " thread_id:" << (unsigned long int)pthread_self()
                                   << endl;
@@ -288,7 +288,7 @@ int main(int argc, char** argv)
             if(!cfg.is_download())
                 task = new CTaskUpload(s3_client, cfg.get_file_name().c_str());
             else
-                task = new CTaskDownload(s3_client, cf.get_file_name.c_str());
+                task = new CTaskDownload(s3_client, cfg.get_file_name().c_str());
 
             pool.Put(task);
         }
@@ -311,3 +311,4 @@ int main(int argc, char** argv)
     pthread_mutex_destroy(&rps_mutex);
     Aws::ShutdownAPI(options);
 }
+
