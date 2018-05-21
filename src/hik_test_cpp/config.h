@@ -42,10 +42,8 @@ public:
     Config(string file)
     {
         parse_config(file);
-        cout << "operator_type:" << is_download() << " thread_count:" << get_thread_count()
-             << " test_time:" << get_test_time() << " file_size:" << get_file_size()
-             << " file_name:" << get_file_name() << " open_log:" << open_log() << endl;
     }
+
     int parse_config(string& file)
     {
         ifstream ifs(file.c_str());
@@ -80,15 +78,6 @@ public:
         return (itr->second == "download");
     }
 
-    bool is_download_prepare()
-    {
-        auto itr = m_config.find("operator_type");
-        if(itr == m_config.end())
-            return false;
-
-        return (itr->second == "download_prepare");
-    }
-
     int get_thread_count()
     {
         auto itr = m_config.find("thread_count");
@@ -101,15 +90,6 @@ public:
     int get_test_time()
     {
         auto itr = m_config.find("test_time");
-        if(itr == m_config.end())
-            return 1;
-
-        return atoi(itr->second.c_str());
-    }
-
-    int get_file_size()
-    {
-        auto itr = m_config.find("file_size");
         if(itr == m_config.end())
             return 1;
 
@@ -132,16 +112,6 @@ public:
             return false;
 
         return (itr->second == "true");
-    }
-
-    bool save_download_file()
-    {
-        auto itr = m_config.find("save_download_file");
-        if(itr == m_config.end())
-            return false;
-
-        return (itr->second == "true");
-
     }
 
     int get_max_rps()

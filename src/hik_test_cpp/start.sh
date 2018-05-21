@@ -23,7 +23,7 @@ echo "create test file"
 dd if=/dev/zero of=${file_name} bs=1k count=${file_size}
 
 echo "create config file"
-echo "operator_type:${operator_type},thread_count:${thread_count},test_time:${test_time},file_name:${file_name},open_log:true,max_rps:${max_rps},bucket:${bucket},access_key:${access_key},secret_key:${secret_key}"  > config
+echo "operator_type:${operator_type},thread_count:${thread_count},test_time:${test_time},file_name:${file_name},open_log:true,max_rps:${max_rps},bucket:${bucket},access_key:${access_key},secret_key:${secret_key},addr:${addr}"  > config
 
 echo "start test, you can run sh stop.sh top suspend test"
 nohup sh ./run.sh &

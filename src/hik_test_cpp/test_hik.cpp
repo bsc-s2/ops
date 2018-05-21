@@ -35,8 +35,7 @@ fstream fs_log;
 Aws::S3::S3Client create_client(Aws::SDKOptions& options);
 void upload_file(Aws::S3::S3Client s3_client, Aws::String file_path);
 Aws::String get_upload_key();
-Aws::String get_download_key();
-void download_file(Aws::S3::S3Client s3_client);
+void download_file(Aws::S3::S3Client s3_client, Aws::String file_path);
 int expected_speed = 0;
 Config cfg = Config("./config");
 
@@ -56,12 +55,13 @@ class CTaskUpload : public CTask
 class CTaskDownload : public CTask
 {
     Aws::S3::S3Client m_cli;
+    Aws::String m_file;
     public:
-        CTaskDownload(Aws::S3::S3Client client): m_cli(client){}
+        CTaskDownload(Aws::S3::S3Client client, Aws::String f): m_cli(client), m_file(f){}
         virtual ~CTaskDownload(){}
         virtual void update()
         {
-            download_file(m_cli);
+            download_file(m_cli, m_file);
         }
 };
 
@@ -78,15 +78,14 @@ string tm_to_str(const struct timeval& tv)
     return str;
 }
 
-void download_file(Aws::S3::S3Client s3_client)
+void download_file(Aws::S3::S3Client s3_client, Aws::String file_path)
 {
     struct timeval tv_begin;
     gettimeofday(&tv_begin, NULL);
 
     Aws::S3::Model::GetObjectRequest object_request;
-    Aws::String key = get_download_key();
     std::cout << "---------------------download file-------" << key << std::endl;
-    object_request.WithBucket(cfg.get_bucket()).WithKey(key);
+    object_request.WithBucket(cfg.get_bucket()).WithKey(file_path);
 
     auto get_object_outcome = s3_client.GetObject(object_request);
     if (get_object_outcome.IsSuccess())
@@ -98,20 +97,58 @@ void download_file(Aws::S3::S3Client s3_client)
 
         pthread_mutex_lock(&rps_mutex);
         succ_count++;
-        if(cfg.open_log()) fs_log    << "begin_time:"<< tm_to_str(tv_begin)
-                               << " end_time:" << tm_to_str(tv_end)
-                               << " key:" << std::left <<  key
-                               << " used_ms:" << std::left << ms
-                               << " thread_id:" << (unsigned long int)pthread_self() << endl;
+        if(cfg.open_log()) fs_log << "begin_time:"<< tm_to_str(tv_begin)
+                                  << " end_time:" << tm_to_str(tv_end)
+                                  << " key:" << std::left <<  key
+                                  << " used_ms:" << std::left << ms
+                                  << " thread_id:" << (unsigned long int)pthread_self()
+                                  << endl;
         pthread_mutex_unlock(&rps_mutex);
 
     }
     else
     {
-        std::cout << "GetObject error: " <<
-            get_object_outcome.GetError().GetExceptionName() << " " <<
-            get_object_outcome.GetError().GetMessage() << std::endl;
+        std::cout << "GetObject error: "
+                  << get_object_outcome.GetError().GetExceptionName()
+                  << " "
+                  << get_object_outcome.GetError().GetMessage()
+                  << std::endl;
     }
+}
+
+void random_uuid(char buf[37])
+{
+    const char *c = "89ab";
+    char *p = buf;
+    int n;
+    for(n = 0; n < 16; ++n)
+    {
+        int b = rand() % 255;
+        switch(n)
+        {
+            case 6:
+                sprintf(p, "4%x", b % 15);
+                break;
+            case 8:
+                sprintf(p, "%c%x", c[rand() % strlen(c)], b % 15);
+                break;
+            default:
+                sprintf(p, "%02x", b);
+                break;
+        }
+
+        p += 2;
+        switch(n)
+        {
+            case 3:
+            case 5:
+            case 7:
+            case 9:
+                *p++ = '-';
+                break;
+        }
+    }
+    *p = 0;
 }
 
 void upload_file(Aws::S3::S3Client s3_client, Aws::String file_path)
@@ -120,11 +157,7 @@ void upload_file(Aws::S3::S3Client s3_client, Aws::String file_path)
     gettimeofday(&tv_begin, NULL);
     std::cout << "---------------------upload file-------" << file_path << std::endl;
     Aws::S3::Model::PutObjectRequest object_request;
-    Aws::String key;
-    if(cfg.is_download_prepare())
-        key = get_download_key();
-    else
-        key = get_upload_key();
+    Aws::String key = get_upload_key();
 
     object_request.WithBucket(cfg.get_bucket()).WithKey(key);
     ///Binary files must also have the std::ios_base::bin flag or'ed in
@@ -142,18 +175,18 @@ void upload_file(Aws::S3::S3Client s3_client, Aws::String file_path)
 
         pthread_mutex_lock(&rps_mutex);
         succ_count++;
-        if(cfg.open_log()) fs_log    << "begin_time:"<< tm_to_str(tv_begin)
-                               << " end_time:" << tm_to_str(tv_end)
-                               << " key:" << std::left << key
-                               << " used_ms:" << std::left << ms
-                               << " thread_id:" << (unsigned long int)pthread_self() << endl;
+        if(cfg.open_log()) fs_log << "begin_time:"<< tm_to_str(tv_begin)
+                                  << " end_time:" << tm_to_str(tv_end)
+                                  << " key:" << std::left << key
+                                  << " used_ms:" << std::left << ms
+                                  << " thread_id:" << (unsigned long int)pthread_self() << endl;
         pthread_mutex_unlock(&rps_mutex);
     }
     else
     {
-        std::cout << "PutObject error: " <<
-            put_object_outcome.GetError().GetExceptionName() << " " <<
-            put_object_outcome.GetError().GetMessage() << std::endl;
+        std::cout << "PutObject error: "
+                  << put_object_outcome.GetError().GetExceptionName() << " "
+                  << put_object_outcome.GetError().GetMessage() << std::endl;
     }
 }
 
@@ -174,31 +207,19 @@ Aws::S3::S3Client create_client(Aws::SDKOptions& options)
     return Aws::S3::S3Client(Aws::Auth::AWSCredentials(access_key, secret_key), config);
 }
 
-Aws::String get_download_key()
-{
-    static int id = 0;
-    char buffer[1024] = {0};
-    pthread_mutex_lock(&generate_key_mutex);
-    if(id > 1500)
-        id = 0;
-    id++;
-    if(cfg.get_file_size() < 100)
-        snprintf(buffer, 1024, "test_%d", id);
-    else
-        snprintf(buffer, 1024, "test_video_%d", id);
-    pthread_mutex_unlock(&generate_key_mutex);
-
-    return Aws::String(buffer);
-
-}
 Aws::String get_upload_key()
 {
     static int id = 0;
-    time_t tm = time(NULL);
+    static char uuid[37] = {0};
+
     char buffer[1024] = {0};
     pthread_mutex_lock(&generate_key_mutex);
+    if(id == 0)
+    {
+        random_uuid(uuid);
+    }
     id++;
-    snprintf(buffer, 1024, "test_%ld_%d", tm, id);
+    sprintf(buffer, "key_%s_%d", uuid, id);
     pthread_mutex_unlock(&generate_key_mutex);
 
     return Aws::String(buffer);
@@ -267,7 +288,7 @@ int main(int argc, char** argv)
             if(!cfg.is_download())
                 task = new CTaskUpload(s3_client, cfg.get_file_name().c_str());
             else
-                task = new CTaskDownload(s3_client);
+                task = new CTaskDownload(s3_client, cf.get_file_name.c_str());
 
             pool.Put(task);
         }

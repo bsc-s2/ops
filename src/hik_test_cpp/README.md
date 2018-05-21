@@ -23,15 +23,12 @@
     - 静态配置的参数
         - operator_type:
             - upload:上传
-            - download_prepare:下载前上传指定文件，两种<75K和>75K，各自数量1500个即可。下载是遍历下载。
             - download:下载
         - thread_count:线程数量
         - test_time:测试时间
-        - file_name:上传文件名字，需放到当前目录
-        - file_size:下载文件大小，下载测试需先上传
+        - file_name:上传和下载文件名字
         - open_log:是否打开log
         - max_rps:限制速度，个/秒
-        - save_download_file:下载的文件保存到本地
         - bucket:指定bucket
         - access_key:指定access_key
         - secret_key:指定secret_key

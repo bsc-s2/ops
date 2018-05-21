@@ -1,3 +1,2 @@
 operator_type:upload,thread_count:1,test_time:1,file_name:aa,open_log:true,max_rps:10,bucket:xx,access_key:xx,secret_key:xx,addr:127.0.0.1
-#operator_type:download_prepare,thread_count:2,test_time:2,file_size:75,file_name:hik_tt,open_log:true,max_rps:100,bucket:xx,access_key:xx,secret_key:xx,addr:127.0.0.1
-#operator_type:download,thread_count:2,test_time:2,file_size:75,open_log:true,save_download_file:false,max_rps:100,bucket:xx,access_key:xx,secret_key:xx,addr:127.0.0.1
+#operator_type:download,thread_count:2,test_time:2,file_name:aa,open_log:true,max_rps:100,bucket:xx,access_key:xx,secret_key:xx,addr:127.0.0.1
