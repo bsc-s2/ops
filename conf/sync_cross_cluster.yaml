@@ -1,0 +1,45 @@
+---
+SRC_ACCESS_KEY: 'src access key'
+SRC_SECRET_KEY: 'src secert key'
+SRC_BUCKET: 'src bucket'
+SRC_ENDPOINT: 'src endpoint'
+
+DEST_ACCESS_KEY: 'dest access key'
+DEST_SECRET_KEY: 'dest secert key'
+DEST_BUCKET: 'dest bucket'
+DEST_ENDPOINT: 'dest endpoint'
+
+# 只同步包含特定前缀的文件
+PREFIX: ''
+
+START_MARKER: null
+
+END_MARKER: null
+
+# 设置文件的权限
+FILE_ACL: 'private'
+
+PROGRESS_FILE: 'progress.json'
+
+# 设置当文件已存在时，是否强制覆盖文件, 如果为false，则
+FORCE_OVERRIDE: false
+
+# 设置当文件存在时，以下条件任意一个不相同,则会覆盖，FORCE_OVERRIDE为true时，此参数无效
+CONFIG_OVERRIDE:
+    - 'ETag'
+    - 'ContentLength'
+    - 'ContentType'
+    - 'Metadata'
+
+# 设置多少个线程同时添加离线任务
+THREADS_NUM_FOR_ADD_OFFLINE_TASK: 20
+
+# 比较文件类型的时候是否区分大小写
+CONTENT_TYPE_CASE_SENSITIVE: true
+
+# 日志存放目录，日志文件命名规则：ali-sync-for-<ali bucket name>.log
+LOG_DIR: '/tmp/sync_cross_cluster'
+
+REPORT_INTERVAL: 1
+
+STATE_FILE: 'state.json'
