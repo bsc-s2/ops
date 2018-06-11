@@ -16,7 +16,8 @@
     - [Cat.iterate](#catiterate)
     - [Cat.cat](#catcat)
     - [Cat.stat_path](#catstat_path)
-- [Methods](#methods)
+    - [Cat.reset_stat](#catreset_stat)
+- [File system operation methods](#file-system-operation-methods)
   - [fsutil.assert_mountpoint](#fsutilassert_mountpoint)
   - [fsutil.get_all_mountpoint](#fsutilget_all_mountpoint)
   - [fsutil.get_device](#fsutilget_device)
@@ -24,11 +25,17 @@
   - [fsutil.get_disk_partitions](#fsutilget_disk_partitions)
   - [fsutil.get_mountpoint](#fsutilget_mountpoint)
   - [fsutil.get_path_fs](#fsutilget_path_fs)
-  - [fsutil.get_path_usage](#fsutilget_path_usage)
   - [fsutil.makedirs](#fsutilmakedirs)
+  - [fsutil.get_sub_dirs](#fsutilget_sub_dirs)
   - [fsutil.read_file](#fsutilread_file)
+  - [fsutil.remove](#fsutilremove)
   - [fsutil.write_file](#fsutilwrite_file)
   - [fsutil.calc_checksums](#fsutilcalc_checksums)
+- [Stat methods](#stat-methods)
+  - [fsutil.get_path_inode_usage](#fsutilget_path_inode_usage)
+  - [fsutil.get_path_usage](#fsutilget_path_usage)
+  - [fsutil.iostat](#fsutiliostat)
+    - [Implementation](#implementation)
 - [Author](#author)
 - [Copyright and License](#copyright-and-license)
 
@@ -119,7 +126,8 @@ offset, or it scan from the first byte.
 
 
 **syntax**:
-`Cat(fn, handler=None, file_end_handler=None, exclusive=True, id=None, strip=False)`
+`Cat(fn, handler=None, file_end_handler=None, exclusive=True,
+        id=None, strip=False, read_chunk_size=16*1024**2)`
 
 **arguments**:
 
@@ -162,6 +170,12 @@ offset, or it scan from the first byte.
 
     By default it is `False`.
 
+-   `read_chunk_size`:
+    is the buffer size to read data once, appropriate small `read_chunk_size`
+    will return stream data quickly.
+
+    By default it is `16*1024**2`.
+
 **config**:
 
 -   `cat_stat_dir`:
@@ -200,6 +214,47 @@ Make a generator to yield every line.
 
     By default it is 3600.
 
+-   `default_seek`:
+    specify a default offset when the last scanned offset is not avaliable
+    or not valid.
+
+    Not avaliable mean the stat file used to store the scanning offset is
+    not exist or has broken. For example, when it is the first time to
+    scan a file, the stat file will not exist.
+
+    Not valid mean the info stored in stat file is not for the file we are
+    about to scan, this will happen when the same file is deleted and then
+    created, the info stored in stat file is for the deleted file not for
+    the created new file.
+
+    We will also treat the last offset stored in stat file as not valid
+    if it is too small than the file size when you set `default_seek`
+    to a negative number. And the absolute value of `default_seek` is
+    the maximum allowed difference.
+
+    It can take following values:
+
+    -   fsutil.SEEK_START:
+        scan from the beginning of the file.
+
+    -   fsutil.SEEK_END:
+        scan from the end of the file, mean only new data will be scanned.
+
+    -   `x`(a positive number, includes `0`).
+        scan from offset `x`.
+
+    -   `-x`(a negative number).
+        it is used to specify the maximum allowed difference between last
+        offset and file size. If the difference is bigger than `x`, then
+        scan from `x` bytes before the end of the file, not scan from the
+        last offset.
+
+        This is usefull when you want to scan from near the end of the file.
+        Use `fsutil.SEEK_END` can not solve the problem, because it only
+        take effect when the last offset is not avaliable.
+
+    By default it is `fsutil.SEEK_START`.
+
 **return**:
 a generator.
 
@@ -207,7 +262,6 @@ a generator.
 
 -   `NoSuchFile`: if file does not present before `timeout`.
 -   `NoData`: if file does not have un-scanned data before `timeout`.
-
 
 ###  Cat.cat
 
@@ -220,7 +274,6 @@ let `Cat.handler` to deal with each line.
 **return**:
 Nothing.
 
-
 ###  Cat.stat_path
 
 Returns the full path of the file to store scanning offset.
@@ -231,8 +284,17 @@ Returns the full path of the file to store scanning offset.
 **return**:
 string
 
+###  Cat.reset_stat
 
-# Methods
+Remove the file used to store scanning offset.
+
+**syntax**:
+`Cat.reset_stat()`
+
+**return**:
+Nothing
+
+# File system operation methods
 
 ##  fsutil.assert_mountpoint
 
@@ -305,12 +367,16 @@ the file-system name, such as `ext4` or `hfs`.
 ##  fsutil.get_disk_partitions
 
 **syntax**:
-`fsutil.get_disk_partitions()`
+`fsutil.get_disk_partitions(all=True)`
 
 Find and return all mounted path and its mount point information in a
 dictionary.
 
-All mount points including non-disk path are also returned.
+**arguments**:
+
+-   `all`:
+    By default it is `True` thus all mount points including non-disk path are also returned,
+    otherwise `tmpfs` or `/proc` are not returned.
 
 **return**:
 an dictionary indexed by mount point path:
@@ -370,6 +436,206 @@ Return the name of device where the `path` is mounted.
 the file-system name, such as `ext4` or `hfs`.
 
 
+##  fsutil.makedirs
+
+**syntax**:
+`fsutil.makedirs(*path, mode=0755, uid=None, gid=None)`
+
+Make directory.
+If intermediate directory does not exist, create them too.
+
+**arguments**:
+
+-   `*path`:
+    is a single part path such as `/tmp/foo` or a separated path such as
+    `('/tmp', 'foo')`.
+
+-   `mode`:
+    specifies permission mode for the dir created or existed.
+
+    By defaul it is `0755`.
+
+-   `uid`:
+    and `gid` to specify another user/group for the dir to create.
+
+    By default they are `None` and the created dir inherits ownership from the
+    running python program.
+
+**return**:
+Nothing
+
+**raise**:
+`OSError` if trying to create dir with the same path of a non-dir file, or
+having other issue like permission denied.
+
+
+##  fsutil.get_sub_dirs
+
+**syntax**:
+`fsutil.get_sub_dirs(path)`
+
+Get all sorted sub directories of `path`.
+
+**arguments**:
+
+-   `path`:
+    is the directory path.
+
+**return**:
+a list contain all sub directory names.
+
+
+##  fsutil.read_file
+
+**syntax**:
+`fsutil.read_file(path)`
+
+Read and return the entire file specified by `path`
+
+**arguments**:
+
+-   `path`:
+    is the file path to read.
+
+**return**:
+file content in string.
+
+
+##  fsutil.remove
+
+**syntax**:
+`fsutil.remove(path, ignore_errors=False, onerror=None)`
+
+Recursively delete `path`, the `path` is one of *file*, *directory* or *symbolic link*.
+
+**arguments**:
+
+-   `path`:
+    is the path to remove.
+
+-   `ignore_errors`:
+    whether ignore *os.error* while deleting the `path`.
+
+-   `onerror`:
+    If `ignore_errors` is set to `True`, errors(os.error) are ignored;
+    otherwise, if `onerror` is set, it is called to handle the error with
+    arguments `(func, path, exc_info)` where func is *os.listdir*,
+    *os.remove*, *os.rmdir* or *os.path.isdir*.
+
+**return**:
+Nothing
+
+
+##  fsutil.write_file
+
+**syntax**:
+`fsutil.write_file(path, content, uid=None, gid=None, atomic=False, fsync=True)`
+
+Write `content` to file `path`.
+
+**arguments**:
+
+-   `path`:
+    is the file path to write to.
+
+-   `content`:
+    specifies the content to write.
+
+-   `uid` and `gid`:
+     specifies the user_id/group_id the file belongs to.
+
+     Bedefault they are `None`, which means the file that has been written
+     inheirts ownership of the running python script.
+
+-   `atomic`:
+    atomically write content to the path.
+
+    Write content to a temporary file, then rename to the path.
+    The temporary file names of same path in one process distinguish with
+    `timeutil.ns()`, it is not atomic if the temporary files of same path
+    created at the same nanosecond.
+    The renaming will be an atomic operation (this is a POSIX requirement).
+
+-   `fsync`:
+    specify if need to synchronize data to storage device.
+
+**return**:
+Nothing
+
+
+##  fsutil.calc_checksums
+
+**syntax**:
+`fsutil.calc_checksums(path, sha1=False, md5=False, crc32=False, sha256=False,
+                   block_size=READ_BLOCK, io_limit=READ_BLOCK):`
+
+Calculate checksums of `path`, like: `sha1` `md5` `crc32`.
+
+```python
+from pykit import fsutil
+
+file_name = 'test.file'
+
+fsutil.write_file(file_name, '')
+print fsutil.calc_checksums(file_name, sha1=True, md5=True, crc32=False, sha256=True)
+#{
+# 'sha1': 'da39a3ee5e6b4b0d3255bfef95601890afd80709',
+# 'md5': 'd41d8cd98f00b204e9800998ecf8427e',
+# 'crc32': None,
+# 'sha256':'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+#}
+```
+
+**arguments**:
+
+-   `path`:
+    is the file path to calculate.
+
+-   `sha1` and `md5` and `crc32` and `sha256`:
+    are checksum types to calculate. Default is `False`.
+
+    The result of this type is `None` if the checksum type is `False`.
+
+-   `block_size`:
+     is the buffer size while reading content of `path`.
+
+-   `io_limit`:
+    is the IO limitation per second while reading content of `path`.
+
+    There is no limitation if `io_limit` is negative number.
+
+**return**:
+a dict with keys `sha1` and `md5` and `crc32` and `sha256`.
+
+
+#   Stat methods
+
+##  fsutil.get_path_inode_usage
+
+**syntax**:
+`fsutil.get_path_inode_usage(path)`
+
+Collect inode usage information of the file system `path` is mounted on.
+
+**arguments**:
+
+- `path`:
+specifies the fs - path to collect usage info.
+Such as `/tmp` or `/home/alice`.
+
+**return**:
+a dictionary in the following format:
+
+```json
+{
+    'total':     total number of inode,
+    'used':      used inode(includes inode reserved for super user),
+    'available': total - used,
+    'percent':   float(used) / 'total'
+}
+```
+
+
 ##  fsutil.get_path_usage
 
 **syntax**:
@@ -407,131 +673,71 @@ then it can not use the reserved space.
 Thus this function provides with the `available` bytes by default.
 
 
-##  fsutil.makedirs
+##  fsutil.iostat
 
 **syntax**:
-`fsutil.makedirs(*path, mode=0755, uid=None, gid=None)`
+`fsutil.iostat(device=None, path=None, stat_path=None)`
 
-Make directory.
-If intermediate directory does not exist, create them too.
+Collect IO stat.
 
-**arguments**:
-
--   `*path`:
-    is a single part path such as `/tmp/foo` or a separated path such as
-    `('/tmp', 'foo')`.
-
--   `mode`:
-    specifies permission mode for the dir created or existed.
-
-    By defaul it is `0755`.
-
--   `uid`:
-    and `gid` to specify another user/group for the dir to create.
-
-    By default they are `None` and the created dir inherits ownership from the
-    running python program.
-
-**return**:
-Nothing
-
-**raise**:
-`OSError` if trying to create dir with the same path of a non-dir file, or
-having other issue like permission denied.
-
-
-##  fsutil.read_file
-
-**syntax**:
-`fsutil.read_file(path)`
-
-Read and return the entire file specified by `path`
-
-**arguments**:
-
--   `path`:
-    is the file path to read.
-
-**return**:
-file content in string.
-
-
-##  fsutil.write_file
-
-**syntax**:
-`fsutil.write_file(path, content, uid=None, gid=None, atomic=False)`
-
-Write `content` to file `path`.
-
-**arguments**:
-
--   `path`:
-    is the file path to write to.
-
--   `content`:
-    specifies the content to write.
-
--   `uid` and `gid`:
-     specifies the user_id/group_id the file belongs to.
-
-     Bedefault they are `None`, which means the file that has been written
-     inheirts ownership of the running python script.
-
--   `atomic`:
-    atomically write content to the path.
-
-    Write content to a temporary file, then rename to the path.
-    The temporary file names of same path in one process distinguish with
-    `timeutil.ns()`, it is not atomic if the temporary files of same path
-    created at the same nanosecond.
-    The renaming will be an atomic operation (this is a POSIX requirement).
-
-**return**:
-Nothing
-
-
-##  fsutil.calc_checksums
-
-**syntax**:
-`fsutil.calc_checksums(path, sha1=False, md5=False, crc32=False,
-    block_size=32*1024**2, io_limit=32*1024**2)`
-
-Calculate checksums of `path`, like: `sha1` `md5` `crc32`.
+**Synopsis**:
 
 ```python
-from pykit import fsutil
-
-file_name = 'test.file'
-
-fsutil.write_file(file_name, '')
-print fsutil.calc_checksums(file_name, sha1=True, md5=True, crc32=False)
-#{
-# 'sha1': 'da39a3ee5e6b4b0d3255bfef95601890afd80709',
-# 'md5': 'd41d8cd98f00b204e9800998ecf8427e',
-# 'crc32': None
-#}
+print fsutil.iostat('/dev/sda1') # {'read': 6151, 'write': 34073, 'ioutil': 0}
+print fsutil.iostat(path='/')    # {'read': 6151, 'write': 34073, 'ioutil': 100}
 ```
+
+It accepts either `device` or `path` as target to collect IO stat from:
+
+-   `device` should be a path starts with `/dev`, such as `/dev/sda1`.
+
+-   `path` is any path on a valid mounted fs. If `path` is used and `device` is
+    `None`, it uses the device on which the `path` is mounted.
+
+One must specify either `device` or `path`.
+
+
+### Implementation
+
+`/proc/diskstats` provides accumulated IO stat since a host boots up.
+Such as total count of read/write operation on a disk.
+
+This function records changes in `/proc/diskstats` and calculates the diff
+between two recorded stat as return value.
+
+`fsutil.iostat` reads instant IO stat from `/proc/diskstats` and save it in
+`stat_path`. When next time `fsutil.iostat` is called, it calculates the
+difference between the current stat from `/proce/diskstats` and the saved stat.
+
+If no previous recorded stat saved in `stat_path`, it waits a second and load
+`/proc/diskstats` again, and calculate the diff.
 
 **arguments**:
 
+-   `device`:
+    specifies from which device to collect IO stat.
+
 -   `path`:
-    is the file path to calculate.
+    specifies from which fs path to collect IO stat.
 
--   `sha1` and `md5` and `crc32`:
-    are checksum types to calculate. Default is `False`.
+-   `stat_path`:
+    specifies where to store and load IO stat.
 
-    The result of this type is `None` if the checksum type is `False`.
-
--   `block_size`:
-     is the buffer size while reading content of `path`.
-
--   `io_limit`:
-    is the IO limitation per second while reading content of `path`.
-
-    There is no limitation if `io_limit` is negative number.
+    By default it is `None`, then it uses `config.iostat_stat_path`(`/tmp/pykit-iostat`) to save
+    stat.
 
 **return**:
-a dict with keys `sha1` and `md5` and `crc32`.
+a dict contains 3 field:
+```json
+{
+'read': 6151,
+'write': 34073,
+'ioutil': 0
+}
+```
+
+`read` and `write` is in byte/second.
+`ioutil` is a percentage number between 0 and 100.
 
 
 #   Author

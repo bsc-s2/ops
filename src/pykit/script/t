@@ -1,0 +1,155 @@
+#!/bin/sh
+
+usage()
+{
+    cat <<-END
+Usage:
+    # test all
+    script/t.sh
+
+    # test a module
+    script/t.sh zkutil
+    script/t.sh zkutil.test
+
+    # test a file
+    script/t.sh zkutil.test.test_zkutil
+
+    # test a class
+    script/t.sh zkutil.test.test_zkutil.TestZKUtil
+
+    # test a function
+    script/t.sh zkutil.test.test_zkutil.TestZKUtil.test_lock_data
+
+
+    # absolute package path
+    script/t.sh pykit.zkutil.test.test_zkutil.TestZKUtil.test_lock_data
+
+
+    # relative path: following are the same:
+    cd pykit;                    script/t.sh pykit.zkutil.test.test_zkutil
+    cd pykit;                    script/t.sh       zkutil.test.test_zkutil
+    cd pykit/zkutil;          ../script/t.sh              test.test_zkutil
+    cd pykit/zkutil/test/; ../../script/t.sh                   test_zkutil
+
+Options:
+    -v                  Display dependency check.
+                        Display case names.
+
+    -vv | -v -v         Display debug message in unittest script: dd().
+
+    -C                  Skip dependency check.
+
+    -h                  Display this message.
+
+    -p                  Specify python version to run the test.
+                        By default it is "2" for python2.
+
+Example:
+    script/t.sh -C -vv -p 3.6 zkutil.test.test_zkutil
+END
+}
+
+flag=
+ut_debug=
+verbosity=
+check_dep=1
+pyth=
+pyth_ver=2
+
+while [ "$#" -gt 0 ]; do
+
+    # -v or -vv
+    if [ "${1:0:2}" = "-v" ]; then
+        flag='-v'
+        verbosity="v$verbosity"
+
+        # -vv
+        more=${1:2}
+
+        if [ "$more" = 'v' ]; then
+            verbosity="v$verbosity"
+        fi
+        shift
+    elif [ "$1" = "-C" ]; then
+        # quick mode,  do not check dependency
+        check_dep=0
+        shift
+    elif [ "$1" = "-h" ]; then
+        shift
+        usage
+        exit 0
+    elif [ "$1" = "-p" ]; then
+        shift
+        pyth_ver=$1
+        shift
+    else
+        break
+    fi
+done
+
+pyth=python$pyth_ver
+
+if [ "$verbosity" = 'vv' ]; then
+    ut_debug=1
+fi
+
+pkg="${1%/}"
+
+if [ "${pkg%%.*}" = "pykit" ]; then
+    # abosulue package path
+    while [ ! -d pykit ]; do
+        cd ..
+    done
+else
+    while [ ! -d pykit ]; do
+        pkg="$(basename $(pwd)).$pkg"
+        cd ..
+    done
+
+    pkg="${pkg%.}"
+fi
+
+if [ "$check_dep" = "1" ]; then
+    # Check if all module can be imported properly, to find uninstalled dependency
+    # module.
+    echo 'check if modules are importable...'
+    unimportable=
+    for _mod in $(find pykit -mindepth 2 -maxdepth 2 -type f -name __init__.py); do
+        mod=${_mod#pykit/}
+        mod=${mod%/__init__.py}
+        if msg=$($pyth -c 'import pykit.'$mod 2>&1); then
+            if [ "$verbosity" != "" ]; then
+                printf "test importing $mod: OK\n"
+            fi
+        else
+            if [ "$verbosity" != "" ]; then
+                printf "test importing $mod: ERROR:\n"
+                echo "$msg"
+            fi
+            unimportable="$unimportable\n$(printf "    %-12s" $mod): $(echo "$msg" | tail -n1)"
+        fi
+    done
+
+    if [ "$unimportable" != "" ] && [ "$verbosity" = "" ]; then
+        echo "!!!"
+        echo "!!! There are some module can not be imported, those might impede tests:$unimportable"
+        echo "!!!"
+        echo "!!! run t.sh with '-v' to see more info "
+        echo "!!!"
+    fi
+fi
+
+
+# Find test from a subdir or a module.
+# Add env variable PYTHONPATH to let all modules in sub folder can find the
+# root package.
+
+# UT_DEBUG controls if dd() should output debug log to stdout.
+# see ututil.py
+
+pkg_path="${pkg//.//}"
+if [ -f "$pkg_path/__init__.py" ]; then
+    PYTHONPATH="$(pwd)" UT_DEBUG=$ut_debug $pyth -m unittest discover -c $flag --failfast -s "$pkg"
+else
+    PYTHONPATH="$(pwd)" UT_DEBUG=$ut_debug $pyth -m unittest -c $flag --failfast "$pkg"
+fi

@@ -1,6 +1,8 @@
 #!/usr/bin/env python2
 # coding: utf-8
 
+import copy
+import operator
 import unittest
 
 from pykit import dictutil
@@ -15,10 +17,22 @@ class TestDictDeepIter(unittest.TestCase):
 
         cases = (
             ({}, []),
-            ({'k1': 'v1'}, [(['k1'], 'v1')]),
-            ({'k1': 'v1', 'k2': 'v2'}, [(['k2'], 'v2'), (['k1'], 'v1')]),
-            ({'k1': {'k11': 'v11'}, 'k2': 'v2'},
-             ([(['k2'], 'v2'), (['k1', 'k11'], 'v11')]),
+            ({'k1': 'v1'},
+             [(['k1'], 'v1')]
+             ),
+            ({'k1': 'v1', 'k2': 'v2'},
+             [
+                (['k1'], 'v1'),
+                (['k2'], 'v2'),
+            ]),
+            ({'k1': {'k11': 'v11'},
+              'k2': 'v2',
+              'empty': {},
+              },
+             ([
+                 (['k1', 'k11'], 'v11'),
+                 (['k2'], 'v2'),
+             ]),
              )
         )
 
@@ -45,7 +59,10 @@ class TestDictDeepIter(unittest.TestCase):
         ks = ['mykey']
 
         _in = {'k1': {'k11': 'v11'}, 'k2': 'v2'}
-        _out = [(['mykey', 'k2'], 'v2'), (['mykey', 'k1', 'k11'], 'v11')]
+        _out = [
+            (['mykey', 'k1', 'k11'], 'v11'),
+            (['mykey', 'k2'], 'v2'),
+        ]
         _mes = 'test argument ks in dictutil.dict_depth_iter()'
 
         for rst in dictutil.depth_iter(_in, ks=ks):
@@ -67,44 +84,170 @@ class TestDictDeepIter(unittest.TestCase):
 
         idx = 0
 
-        _in = {'k1': {'k11': {'k111': {'k1111': 'v1111'}}}}
-        _out = [(['k1'], {'k11': {'k111': {'k1111': 'v1111'}}}),
-                (['k1', 'k11'], {'k111': {'k1111': 'v1111'}}),
-                (['k1', 'k11', 'k111'], {'k1111': 'v1111'}),
-                (['k1', 'k11', 'k111', 'k1111'], 'v1111')
-                ]
+        _in = {
+            'k1': {
+                'k11': {
+                    'k111': {
+                        'k1111': 'v1111'
+                    },
+                    'empty': {},
+                },
+            },
+        }
+
+        _out = [
+            (['k1'], {'k11': {'k111': {'k1111': 'v1111'}, 'empty': {}}}),
+            (['k1', 'k11'], {'k111': {'k1111': 'v1111'}, 'empty': {}}),
+            (['k1', 'k11', 'empty'], {}),
+            (['k1', 'k11', 'k111'], {'k1111': 'v1111'}),
+            (['k1', 'k11', 'k111', 'k1111'], 'v1111')
+        ]
 
         for depth in range(1, 5):
             for rst in dictutil.depth_iter(_in, maxdepth=depth):
-                self.assertEqual(
-                    _out[idx],
-                    rst,
-                    'input:: {_in}, output: {rst}, expected: {_out}'.format(
-                        _in=repr(_in),
-                        rst=repr(rst),
-                        _out=repr(_out[idx])
-                    )
-                )
+                dd('depth:', depth)
+                dd('_in:', _in)
+                dd('_out[idx]:', _out[idx])
+                dd('rst:', rst)
+                self.assertEqual(_out[idx], rst)
 
-            idx = idx + 1
+                idx = idx + 1
 
     def test_depth_iter_intermediate(self):
 
+        _in = {
+            'k1': {
+                'k11': {
+                    'k111': {
+                        'k1111': 'v1111'
+                    },
+                    'empty': {},
+                },
+            },
+        }
+
+        _out = [
+            (['k1'], {'k11': {'k111': {'k1111': 'v1111'}, 'empty': {}}}),
+            (['k1', 'k11'], {'k111': {'k1111': 'v1111'}, 'empty': {}}),
+            (['k1', 'k11', 'empty'], {}),
+            (['k1', 'k11', 'k111'], {'k1111': 'v1111'}),
+            (['k1', 'k11', 'k111', 'k1111'], 'v1111')
+        ]
+
         idx = 0
-
-        _in = {'k1': {'k11': {'k111': {'k1111': 'v1111'}}}}
-        _out = [(['k1'], {'k11': {'k111': {'k1111': 'v1111'}}}),
-                (['k1', 'k11'], {'k111': {'k1111': 'v1111'}}),
-                (['k1', 'k11', 'k111'], {'k1111': 'v1111'}),
-                (['k1', 'k11', 'k111', 'k1111'], 'v1111')
-                ]
-
         for rst in dictutil.depth_iter(_in, intermediate=True):
             self.assertEqual(
                 _out[idx],
                 rst)
 
             idx = idx + 1
+
+        self.assertEqual(len(_out), idx)
+
+    def test_depth_iter_empty_as_leaf(self):
+
+        _in = {
+            'k1': {
+                'k11': {
+                    'k111': {
+                        'k1111': 'v1111'
+                    },
+                    'empty': {},
+                },
+            },
+        }
+
+        _out = [
+            (['k1', 'k11', 'empty'], {}),
+            (['k1', 'k11', 'k111', 'k1111'], 'v1111'),
+        ]
+
+        idx = 0
+        for rst in dictutil.depth_iter(_in, empty_leaf=True):
+            self.assertEqual(_out[idx], rst)
+            idx = idx + 1
+
+        self.assertEqual(len(_out), idx)
+
+    def test_depth_iter_empty_as_leaf_and_intermediate(self):
+
+        _in = {
+            'k1': {
+                'k11': {
+                    'k111': {
+                        'k1111': 'v1111'
+                    },
+                    'empty': {},
+                },
+            },
+        }
+
+        _out = [
+            (['k1'], {'k11': {'k111': {'k1111': 'v1111'}, 'empty': {}}}),
+            (['k1', 'k11'], {'k111': {'k1111': 'v1111'}, 'empty': {}}),
+            (['k1', 'k11', 'empty'], {}),
+            (['k1', 'k11', 'k111'], {'k1111': 'v1111'}),
+            (['k1', 'k11', 'k111', 'k1111'], 'v1111')
+        ]
+
+        idx = 0
+        for rst in dictutil.depth_iter(_in, intermediate=True, empty_leaf=True):
+            self.assertEqual(_out[idx], rst)
+            idx = idx + 1
+
+        self.assertEqual(len(_out), idx)
+
+    def test_depth_iter_is_allowed(self):
+
+        _in = {
+            'k1': {
+                'k11': {
+                    'k111': {
+                        'k1111': 'v1111'
+                    },
+                    'empty': {},
+                },
+            },
+        }
+
+        cases = (
+                ({'is_allowed': lambda ks, v: isinstance(v, dict) and len(v) == 0,
+                  },
+                 ['k1', 'k11', 'empty'], {},
+                 'choose only empty dict value',
+                 ),
+
+                ({'is_allowed': lambda ks, v: isinstance(v, str),
+                  },
+                 ['k1', 'k11', 'k111', 'k1111'], 'v1111',
+                 'choose only string value',
+                 ),
+
+                ({'is_allowed': lambda ks, v: isinstance(v, str),
+                  'intermediate': True,
+                  },
+                 ['k1', 'k11', 'k111', 'k1111'], 'v1111',
+                 'is_allowed should override intermediate',
+                 ),
+
+                ({'is_allowed': lambda ks, v: isinstance(v, str),
+                  'empty_leaf': True,
+                  },
+                 ['k1', 'k11', 'k111', 'k1111'], 'v1111',
+                 'is_allowed should override empty_leaf',
+                 ),
+
+        )
+
+        for kwargs, expected_ks, expected_v, msg in cases:
+
+            dd(msg)
+            dd(kwargs)
+            dd('expected:', expected_ks, expected_v)
+
+            for ks, v in dictutil.depth_iter(_in, **kwargs):
+                self.assertEqual(expected_ks, ks)
+                self.assertEqual(expected_v, v)
 
 
 class TestDictBreadthIter(unittest.TestCase):
@@ -147,50 +290,121 @@ class TestGetter(unittest.TestCase):
 
         cases = (
             ('',
-             'lambda dic, vars={}: dic'
+             [''],
+             ('',),
+             'lambda dic, vars={}: dic.get("", vars.get("_default", 0))'
              ),
 
             ('.',
+             ['', ''],
+             ('', '',),
              'lambda dic, vars={}: dic.get("", {}).get("", vars.get("_default", 0))'
              ),
 
+            ('...',
+             ['', '', '', ''],
+             ('', '', '', ''),
+             'lambda dic, vars={}: dic.get("", {}).get("", {}).get("", {}).get("", vars.get("_default", 0))'
+             ),
+
+            ('.x',
+             ['', 'x'],
+             ('', 'x'),
+             'lambda dic, vars={}: dic.get("", {}).get("x", vars.get("_default", 0))'
+             ),
+
+            ('x..',
+             ['x', '', ''],
+             ('x', '', ''),
+             'lambda dic, vars={}: dic.get("x", {}).get("", {}).get("", vars.get("_default", 0))'
+             ),
+
             ('x',
+             ['x'],
+             ('x',),
              'lambda dic, vars={}: dic.get("x", vars.get("_default", 0))'
              ),
 
             ('x.y',
+             ['x', 'y'],
+             ('x', 'y',),
              'lambda dic, vars={}: dic.get("x", {}).get("y", vars.get("_default", 0))'
              ),
 
             ('x.y.zz',
+             ['x', 'y', 'zz'],
+             ('x', 'y', 'zz',),
              'lambda dic, vars={}: dic.get("x", {}).get("y", {}).get("zz", vars.get("_default", 0))'
              ),
 
             # dynamic
             ('$',
+             ['$'],
+             ('$',),
              'lambda dic, vars={}: dic.get(str(vars.get("", "_")), vars.get("_default", 0))'
              ),
 
             ('$xx',
+             ['$xx'],
+             ('$xx',),
              'lambda dic, vars={}: dic.get(str(vars.get("xx", "_")), vars.get("_default", 0))'
              ),
 
             ('$xx.$yy',
+             ['$xx', '$yy'],
+             ('$xx', '$yy',),
              'lambda dic, vars={}: dic.get(str(vars.get("xx", "_")), {}).get(str(vars.get("yy", "_")), vars.get("_default", 0))'
              ),
+
+            (None,
+             [1, '1', 1.0, ()],
+             (1, '1', 1.0, ()),
+             'lambda dic, vars={}: dic.get(1, {}).get("1", {}).get(1.0, {}).get((), vars.get("_default", 0))',
+             ),
+
+            (None,
+             [('x',), ('y',)],
+             (('x',), ('y',)),
+             'lambda dic, vars={}: dic.get(("x",), {}).get(("y",), vars.get("_default", 0))',
+             ),
+
+            (None,
+             [(1,), ('1', (1.0,),)],
+             ((1,), ('1', (1.0,),)),
+             'lambda dic, vars={}: dic.get((1,), {}).get(("1",(1.0,),), vars.get("_default", 0))',
+             ),
+
+            (None,
+             [(1,), ('$xx', (1.0,), '$yy'), ],
+             ((1,), ('$xx', (1.0,), '$yy'), ),
+             'lambda dic, vars={}: dic.get((1,), {}).get((str(vars.get("xx", "_")),(1.0,),str(vars.get("yy", "_")),), vars.get("_default", 0))',
+             ),
+
+            (None,
+             [{1: 1}, [1, '1']],
+             ({1: 1}, [1, '1']),
+             'lambda dic, vars={}: dic.get({1: 1}, {}).get([1, \'1\'], vars.get("_default", 0))')
         )
 
-        for _in, _out in cases:
+        for _in_str, _in_list, _in_tuple, _out in cases:
 
-            rst = dictutil.make_getter_str(_in)
+            self.assert_make_getter_str(_in_str, _out)
 
-            self.assertEqual(_out, rst,
-                             'input: {_in}, expected: {_out}, actual: {rst}'.format(
-                                 _in=repr(_in),
-                                 _out=repr(_out),
-                                 rst=repr(rst),
-                             )
-                             )
+            self.assert_make_getter_str(_in_list, _out)
+
+            self.assert_make_getter_str(_in_tuple, _out)
+
+    def assert_make_getter_str(self, _in, _out, default=0):
+        if _in is None:
+            return
+        rst = dictutil.make_getter_str(_in, default=default)
+        self.assertEqual(_out, rst,
+                         'input: {_in}, expected: {_out}, actual: {rst}'.format(
+                             _in=repr(_in),
+                             _out=repr(_out),
+                             rst=repr(rst),
+                         )
+                         )
 
     def test_getter_str_default(self):
 
@@ -214,129 +428,182 @@ class TestGetter(unittest.TestCase):
 
         )
 
-        for _in, _default, _out in cases:
+        for _in_str, _default, _out in cases:
 
-            rst = dictutil.make_getter_str(_in, default=_default)
+            _in_list = [_in_str]
+            _in_tuple = (_in_str,)
 
-            self.assertEqual(_out, rst,
-                             'input: {_in}, {_default}, expected: {_out}, actual: {rst}'.format(
-                                 _in=repr(_in),
-                                 _default=repr(_default),
-                                 _out=repr(_out),
-                                 rst=repr(rst),
-                             )
-                             )
+            self.assert_make_getter_str(_in_str, _out, default=_default)
+
+            self.assert_make_getter_str(_in_list, _out, default=_default)
+
+            self.assert_make_getter_str(_in_tuple, _out, default=_default)
 
     def test_getter_vars(self):
 
         cases = (
 
-            ('', 0,
-             {"x": 1}, {},
-             {"x": 1}
+            ('', [''], ('',),
+             0,
+             {"x": 1, "": 1}, {},
+             1
              ),
 
-            ('x', 0,
+            ('.', ['', ''], ('', '',),
+             0,
+             {'': {'': 1}}, {},
+             1
+             ),
+
+            ('...', ['', '', '', ''], ('', '', '', ''),
+             0,
+             {'': {'': {'': {'': 1}}}}, {},
+             1
+             ),
+
+            ('.x', ['', 'x'], ('', 'x',),
+             0,
+             {'': {'x': 1}}, {},
+             1
+             ),
+
+            ('x..', ['x', '', ''], ('x', '', '',),
+             0,
+             {'x': {'': {'': 1}}}, {},
+             1
+             ),
+
+            ('x', ['x'], ('x',), 0,
              {}, {},
              0
              ),
 
-            ('x', 0,
+            ('x', ['x'], ('x',), 0,
              {'x': {'y': 3}}, {},
              {'y': 3}
              ),
 
-            ('x', 55,
+            ('x', ['x'], ('x',), 55,
              {}, {},
              55
              ),
 
-            ('x', 55,
+            ('x', ['x'], ('x',), 55,
              {}, {'_default': 66},
              66
              ),
 
-            ('x', 55,
+            ('x', ['x'], ('x',), 55,
              {"x": 1}, {},
              1
              ),
 
-            ('x.y', 55,
+            ('x.y', ['x', 'y'], ('x', 'y',), 55,
              {"x": {"y": 3}}, {},
              3
              ),
 
-            ('x.z', 55,
+            ('x.z', ['x', 'z'], ('x', 'z',), 55,
              {"x": {"y": 3}}, {},
              55
              ),
 
-            ('x.$v', 55,
+            ('x.$v', ['x', '$v'], ('x', '$v',), 55,
              {"x": {"y": 3}}, {},
              55
              ),
 
-            ('x.$var_name', 55,
+            ('x.$var_name', ['x', '$var_name'], ('x', '$var_name',), 55,
              {"x": {"y": 3}}, {"var_name": "y"},
              3
              ),
 
-            ('x.$var_name.z', 55,
+            ('x.$var_name.z', ['x', '$var_name', 'z'], ('x', '$var_name', 'z',), 55,
              {"x": {"y": {}}}, {"var_name": "y"},
              55
              ),
 
-            ('x.$var_name.z', 55,
+            ('x.$var_name.z', ['x', '$var_name', 'z'], ('x', '$var_name', 'z',), 55,
              {"x": {"y": {"z": 4}}}, {"var_name": "y"},
              4
              ),
 
+            (None, [1, '1', 1.0, ()], (1, '1', 1.0, ()), 55,
+             {1: {'1': {1.0: {(): 3}}}}, {},
+             3
+             ),
+
+            (None, [(1,), ('$xx', (1.0,), '$yy'), ], ((1,), ('$xx', (1.0,), '$yy'),), 55,
+             {(1,): {('xx', (1.0,), 'yy'): 3}}, {"xx": "xx", "yy": "yy"},
+             3
+             ),
         )
 
-        for _in, _default, _dic, _vars, _out in cases:
+        for _in_str, _in_str_list, _in_str_tuple, _default, _dic, _vars, _out in cases:
 
-            acc = dictutil.make_getter(_in, default=_default)
+            self.assert_getter_and_maker(_in_str, _dic, _out, _vars, _default)
 
-            rst = acc(_dic, vars=_vars)
+            self.assert_getter_and_maker(_in_str_list, _dic, _out, _vars, _default)
 
-            self.assertEqual(_out, rst,
-                             'input: {_in}, {_default}, {_dic}, {_vars} expected: {_out}, actual: {rst}'.format(
-                                 _in=repr(_in),
-                                 _default=repr(_default),
-                                 _dic=repr(_dic),
-                                 _vars=repr(_vars),
-                                 _out=repr(_out),
-                                 rst=repr(rst),
-                             )
-                             )
+            self.assert_getter_and_maker(_in_str_tuple, _dic, _out, _vars, _default)
 
-            # test dictutil.get() with the same set of cases
+    def test_getter_type_error(self):
+        cases = (
+            ([{1: 1}, [1, '1']],
+             {},),
+            (({1: 1}, [1, '1']),
+             {}),
+        )
 
-            rst = dictutil.get(_dic, _in, vars=_vars, default=_default)
-            dd('dictutil.get({dic}, {key_path} vars={vars}, default={default})'.format(
-                dic=_dic,
-                key_path=_in,
-                vars=_vars,
-                default=_default,
-            ))
-            dd(rst)
+        for _in, _dic in cases:
+            acc = dictutil.make_getter(_in, default=0)
+            with self.assertRaises(TypeError):
+                acc(_dic)
+            with self.assertRaises(TypeError):
+                dictutil.get(_dic, _in)
 
-            self.assertEqual(_out, rst,
-                             'input: {_in}, {_default}, {_dic}, {_vars} expected: {_out}, actual: {rst}'.format(
-                                 _in=repr(_in),
-                                 _default=repr(_default),
-                                 _dic=repr(_dic),
-                                 _vars=repr(_vars),
-                                 _out=repr(_out),
-                                 rst=repr(rst),
-                             )
-                             )
+    def assert_getter_and_maker(self, _in, _dic, _out, _vars, _default):
+
+        if _in is None:
+            return
+        acc = dictutil.make_getter(_in, default=_default)
+        rst = acc(_dic, vars=_vars)
+        self.assertEqual(_out, rst,
+                         'input: {_in}, {_default}, {_dic}, {_vars} expected: {_out}, actual: {rst}'.format(
+                             _in=repr(_in),
+                             _default=repr(_default),
+                             _dic=repr(_dic),
+                             _vars=repr(_vars),
+                             _out=repr(_out),
+                             rst=repr(rst),
+                         )
+                         )
+        # test dictutil.get() with the same set of cases
+        rst = dictutil.get(_dic, _in, vars=_vars, default=_default)
+        dd('dictutil.get({dic}, {key_path} vars={vars}, default={default})'.format(
+            dic=_dic,
+            key_path=_in,
+            vars=_vars,
+            default=_default,
+        ))
+        dd(rst)
+        self.assertEqual(_out, rst,
+                         'input: {_in}, {_default}, {_dic}, {_vars} expected: {_out}, actual: {rst}'.format(
+                             _in=repr(_in),
+                             _default=repr(_default),
+                             _dic=repr(_dic),
+                             _vars=repr(_vars),
+                             _out=repr(_out),
+                             rst=repr(rst),
+                         )
+                         )
 
     def test_get_ignore_vars_key_error(self):
 
         cases = (
                 ({}, '$a', {"a": "x"}, None, 0),
                 ({}, '$a', {"a": "x"}, True, 0),
+                ({}, ['$a', ('$a',), ], {"a": "x"}, True, 0),
         )
 
         for case in cases:
@@ -353,20 +620,41 @@ class TestGetter(unittest.TestCase):
         with self.assertRaises(KeyError):
             dictutil.get({}, '$a', {}, ignore_vars_key_error=False)
 
+        with self.assertRaises(KeyError):
+            dictutil.get({}, (('1', '$a',),), {}, ignore_vars_key_error=False)
+
+        with self.assertRaises(KeyError):
+            dictutil.get({}, [('1', '$a',)], {}, ignore_vars_key_error=False)
+
 
 class TestSetter(unittest.TestCase):
-
-    def test_empty_key_path(self):
-        try:
-            dictutil.make_setter('')
-        except KeyError:
-            pass
-        else:
-            self.fail('expect ValueError')
 
     def test_setter(self):
 
         cases = (
+                ('', {},
+                 10,
+                 {'': 10}
+                 ),
+
+                ('.', {},
+                 10,
+                 {'': {'': 10}}),
+
+                ('...', {},
+                 10,
+                 {'': {'': {'': {'': 10}}}}
+                 ),
+
+                ('.x', {},
+                 10,
+                 {'': {'x': 10}},
+                 ),
+
+                ('x..', {},
+                 10,
+                 {'x': {'': {'': 10}}},
+                 ),
 
                 ('a', {},
                  3,
@@ -386,6 +674,36 @@ class TestSetter(unittest.TestCase):
                 ('a.b.c', {'a': {'exist': 44}},
                  3,
                  {'a': {'b': {'c': 3}, 'exist': 44}},
+                 ),
+
+                (['a', 'b', 'c'], {'a': {'exist': 44}},
+                 3,
+                 {'a': {'b': {'c': 3}, 'exist': 44}},
+                 ),
+
+                (('a', 'b', 'c'), {'a': {'exist': 44}},
+                 3,
+                 {'a': {'b': {'c': 3}, 'exist': 44}},
+                 ),
+
+                ([1, '1', 1.0, ()], {'a': {'exist': 44}},
+                 3,
+                 {'a': {'exist': 44}, 1: {'1': {1.0: {(): 3}}}},
+                 ),
+
+                ((1, '1', 1.0, ()), {'a': {'exist': 44}},
+                 3,
+                 {'a': {'exist': 44}, 1: {'1': {1.0: {(): 3}}}},
+                 ),
+
+                ([(1,), ('1', (1.0,),)], {'a': {'exist': 44}},
+                 3,
+                 {'a': {'exist': 44}, (1,): {('1', (1.0,),): 3}},
+                 ),
+
+                (((1,), ('1', (1.0,),)), {'a': {'exist': 44}},
+                 3,
+                 {'a': {'exist': 44}, (1,): {('1', (1.0,),): 3}},
                  ),
 
         )
@@ -436,6 +754,23 @@ class TestSetter(unittest.TestCase):
                 ('a.exist', lambda vars: vars.get('foo'), {'a': {'exist': 44}},
                  {'a': {'exist': 'foo'}},
                  ),
+
+                ([1, '1', 1.0, ()], lambda vars: vars.get('foo'), {'a': {'exist': 44}},
+                 {'a': {'exist': 44}, 1: {'1': {1.0: {(): 'foo'}}}},
+                 ),
+
+                ((1, '1', 1.0, ()), lambda vars: vars.get('foo'), {'a': {'exist': 44}},
+                 {'a': {'exist': 44}, 1: {'1': {1.0: {(): 'foo'}}}},
+                 ),
+
+                ([(1,), ('1', (1.0,),)], lambda vars: vars.get('foo'), {'a': {'exist': 44}},
+                 {'a': {'exist': 44}, (1,): {('1', (1.0,),): 'foo'}},
+                 ),
+
+                (((1,), ('1', (1.0,),)), lambda vars: vars.get('foo'), {'a': {'exist': 44}},
+                 {'a': {'exist': 44}, (1,): {('1', (1.0,),): 'foo'}},
+                 ),
+
         )
 
         _vars = {'foo': 'foo'}
@@ -475,12 +810,18 @@ class TestSetter(unittest.TestCase):
 
         _set = dictutil.make_setter('$a')
 
-        try:
+        with self.assertRaises(KeyError):
             _set({}, vars={})
-        except KeyError:
-            pass
-        else:
-            self.fail('inexistent key should raise key error')
+
+        _set = dictutil.make_setter(['$a'])
+
+        with self.assertRaises(KeyError):
+            _set({}, vars={})
+
+        _set = dictutil.make_setter(('$a',))
+
+        with self.assertRaises(KeyError):
+            _set({}, vars={})
 
     def test_setter_vars(self):
 
@@ -492,6 +833,14 @@ class TestSetter(unittest.TestCase):
 
                 ('$a.$foo', 1,  {},
                  {'aa': {'bar': 1}},
+                 ),
+
+                ([(1,), ('$a', (1.0,), '$foo')], 1, {},
+                 {(1,): {('aa', (1.0,), 'bar'): 1}}
+                 ),
+
+                (((1,), ('$a', (1.0,), '$foo'),), 1, {},
+                 {(1,): {('aa', (1.0,), 'bar'): 1}}
                  ),
 
         )
@@ -535,60 +884,118 @@ class TestSetter(unittest.TestCase):
 
         cases = (
 
-                ('a', 1, {},
+                ('a',
+                 ['a'],
+                 ('a',),
+                 1, {},
                  {'a': 1},
                  ),
 
-                ('a', 1, {'a': 1},
+                ('a',
+                 ['a'],
+                 ('a',),
+                 1, {'a': 1},
                  {'a': 2},
                  ),
 
-                ('a', 'foo', {},
+                ('a',
+                 ['a'],
+                 ('a',),
+                 'foo', {},
                  {'a': 'foo'},
                  ),
 
-                ('a', 'foo', {'a': 'bar'},
+                ('a',
+                 ['a'],
+                 ('a',),
+                 'foo', {'a': 'bar'},
                  {'a': 'barfoo'},
                  ),
 
-                ('a', (1, 2), {},
+                ('a',
+                 ['a'],
+                 ('a',),
+                 (1, 2), {},
                  {'a': (1, 2)},
                  ),
 
-                ('a', (1, 2), {'a': (0, 1)},
+                ('a',
+                 ['a'],
+                 ('a',),
+                 (1, 2), {'a': (0, 1)},
                  {'a': (0, 1, 1, 2)},
                  ),
 
-                ('a', [1, 2], {},
+                ('a',
+                 ['a'],
+                 ('a',),
+                 [1, 2], {},
                  {'a': [1, 2]},
                  ),
 
-                ('a', [1, 2], {'a': [0, 1]},
+                ('a',
+                 ['a'],
+                 ('a',),
+                 [1, 2], {'a': [0, 1]},
                  {'a': [0, 1, 1, 2]},
                  ),
 
-                ('$a.$foo', 1, {},
+                ('$a.$foo',
+                 ['$a', '$foo'],
+                 ('$a', '$foo',),
+                 1, {},
                  {'aa': {'bar': 1}},
                  ),
 
-                ('$a.$foo', 1.1, {},
+                ('$a.$foo',
+                 ['$a', '$foo'],
+                 ('$a', '$foo',),
+                 1.1, {},
                  {'aa': {'bar': 1.1}},
                  ),
 
-                ('$a.$foo', 'suffix', {'aa': {'bar': 'prefix-'}},
+                ('$a.$foo',
+                 ['$a', '$foo'],
+                 ('$a', '$foo',),
+                 'suffix', {'aa': {'bar': 'prefix-'}},
                  {'aa': {'bar': 'prefix-suffix'}},
                  ),
 
-                ('$a.$foo', ('b',), {'aa': {}},
+                ('$a.$foo',
+                 ['$a', '$foo'],
+                 ('$a', '$foo',),
+                 ('b',), {'aa': {}},
                  {'aa': {'bar': ('b',)}},
                  ),
 
-                ('$a.$foo', ('b',), {'aa': {'bar': ('a',)}},
+                ('$a.$foo',
+                 ['$a', '$foo'],
+                 ('$a', '$foo',),
+                 ('b',), {'aa': {'bar': ('a',)}},
                  {'aa': {'bar': ('a', 'b',)}},
                  ),
 
-                ('$a.$foo', ['b', ], {'aa': {'bar': ['a', ]}},
+                ('$a.$foo',
+                 ['$a', '$foo'],
+                 ('$a', '$foo',),
+                 ['b', ], {'aa': {'bar': ['a', ]}},
                  {'aa': {'bar': ['a', 'b', ]}},
+                 ),
+
+                (None,
+                 [1, '1', 1.0, ()],
+                 (1, '1', 1.0, ()),
+                 11,
+                 {1: {'1': {1.0: {(): 100}}}},
+                 {1: {'1': {1.0: {(): 111}}}},
+                 ),
+
+                (None,
+                 [(1,), ('$foo', (1.0,), '$a')],
+                 ((1,), ('$foo', (1.0,), '$a'),),
+                 11,
+                 {(1,): {('bar', (1.0,), 'aa'): 100}},
+                 {(1,): {('bar', (1.0,), 'aa'): 111}},
                  ),
 
         )
@@ -597,22 +1004,28 @@ class TestSetter(unittest.TestCase):
                  'a': 'aa',
                  }
 
-        for _key_path, _default, _dic, _expect in cases:
+        for _in_str, _in_list, _in_tuple, _default, _dic, _expect in cases:
+            self.assert_make_setter(_default, copy.deepcopy(_dic), _expect, _in_str, _vars)
+            self.assert_make_setter(_default, copy.deepcopy(_dic), _expect, _in_list, _vars)
+            self.assert_make_setter(_default, copy.deepcopy(_dic), _expect, _in_tuple, _vars)
 
-            dd(_key_path, _default, _dic, _expect)
+    def assert_make_setter(self, _default, _dic, _expect, _in, _vars):
 
-            _set = dictutil.make_setter(_key_path, value=_default, incr=True)
-            rst = _set(_dic, vars=_vars)
-            dd('rst:', rst)
+        if _in is None:
+            return
 
-            self.assertEqual(_expect, _dic,
-                             'input: {_key_path}, {_dic}; expected dict: {_expect}, actual: {rst}'.format(
-                                 _key_path=repr(_key_path),
-                                 _dic=repr(_dic),
-                                 _expect=repr(_expect),
-                                 rst=repr(rst),
-                             )
-                             )
+        dd(_in, _default, _dic, _expect)
+        _set = dictutil.make_setter(_in, value=_default, incr=True)
+        rst = _set(_dic, vars=_vars)
+        dd('rst:', rst)
+        self.assertEqual(_expect, _dic,
+                         'input: {_key_path}, {_dic}; expected dict: {_expect}, actual: {rst}'.format(
+                             _key_path=repr(_in),
+                             _dic=repr(_dic),
+                             _expect=repr(_expect),
+                             rst=repr(rst),
+                         )
+                         )
 
 
 class TestAttrDict(unittest.TestCase):
@@ -796,3 +1209,297 @@ class TestIsSubDict(unittest.TestCase):
         b['k'][0] = b
 
         self.assertEqual(dictutil.contains(a, b), True)
+
+
+class TestAdd(unittest.TestCase):
+
+    def test_add(self):
+        cases = (
+            ({},          None,       {}, {}),
+            ({},          'foo',      {}, {}),
+            ({},          123,        {}, {}),
+            ({},          {},         {}, {}),
+            ({'a': 1},    {},         {}, {'a': 1}),
+            ({},          {'a': 2},   {}, {'a': 2}),
+            ({'a': 1},    {'a': 2},   {}, {'a': 3}),
+            ({'a': '1'},  {'a': '2'}, {}, {'a': '12'}),
+            ({'a': '1'},  {'b': '2'}, {}, {'a': '1', 'b': '2'}),
+            ({'a': '1'},  {'b': {}},  {}, {'a': '1', 'b': {}}),
+            ({'a': {}},   {'b': {}},  {}, {'a': {}, 'b': {}}),
+            ({'a': {}},   {'a': {}},  {}, {'a': {}}),
+
+            ({'a': {'k1': 1}},
+             {'a': {}},
+             {},
+             {'a': {'k1': 1}}),
+
+            ({'a': {'k1': 1}},
+             {'a': {'k2': 1}},
+             {},
+             {'a': {'k1': 1, 'k2': 1}}),
+
+            ({'a': {'k1': 1}},
+             {'a': {'k1': 1}},
+             {},
+             {'a': {'k1': 2}}),
+
+            ({'a': {'k1': 1}},
+             {'a': {'k1': 1}},
+             {'exclude': {'a': True}, },
+             {'a': {'k1': 1}}),
+
+            ({'a': {'k1': 1}},
+             {'a': {'k1': 1}},
+             {'exclude': {'a': {}}, },
+             {'a': {'k1': 2}}),
+
+            ({'a': {}},
+             {'a': {'k1': 1}},
+             {'exclude': {'a': {}}, },
+             {'a': {'k1': 1}}),
+
+            ({'a': {}},
+             {'a': {'k1': 1}},
+             {'exclude': {'a': True}, },
+             {'a': {}}),
+
+            ({'a': {'k1': 1}},
+             {'a': {'k1': 1}},
+             {'exclude': {'a': {}}, },
+             {'a': {'k1': 2}}),
+
+            ({'a': {'k1': 1}},
+             {'a': {'k1': 1}},
+             {'exclude': {'b': True}, },
+             {'a': {'k1': 2}}),
+
+            ({'a': {'k1': 1}},
+             {'a': {'k1': 1}},
+             {'exclude': {'b': True}, },
+             {'a': {'k1': 2}}),
+
+            ({'a': {'k1': 1}},
+             {'a': {'k1': 1}},
+             {'exclude': {'a': {'k1': True}}, 'recursive': True},
+             {'a': {'k1': 1}}),
+
+            ({'a': {'k1': 1}},
+             {'a': {'k1': 1}},
+             {'exclude': {'a': {'k2': True}}, 'recursive': True},
+             {'a': {'k1': 2}}),
+
+            ({'a': {'k1': 1}, 'b': 1},
+             {'a': {'k1': 1, 'k2': 1}, 'b': 1},
+             {'recursive': False},
+             {'a': {'k1': 1}, 'b': 2}),
+        )
+
+        for a, b, kwargs, expected in cases:
+            dd('a:', a)
+            dd('b:', b)
+            dd('kwargs:', kwargs)
+            dd('expected:', expected)
+
+            result = dictutil.add(a, b, **kwargs)
+            dd('rst:', result)
+
+            self.assertIsNot(a, result)
+            self.assertDictEqual(expected, result,
+                                 repr([a, b, kwargs, result]))
+
+            result = dictutil.addto(a, b, **kwargs)
+
+            self.assertIs(a, result)
+            self.assertDictEqual(expected, result,
+                                 repr([a, b, kwargs, result]))
+
+
+class TestCombine(unittest.TestCase):
+
+    def test_combine(self):
+        cases = (
+            ({'a': 2},
+             {'a': 3},
+             operator.mul,
+             None,
+             {'a': 6}),
+
+            ({'a': 2},
+             {'a': 3},
+             operator.mul,
+             {'a': True},
+             {'a': 2}),
+        )
+
+        for a, b, op, exclude, expected in cases:
+            result = dictutil.combine(a, b, op, exclude=exclude)
+            self.assertIsNot(a, result)
+            self.assertDictEqual(expected, result,
+                                 repr([a, b, op, exclude, expected, result]))
+
+            result = dictutil.combineto(a, b, op, exclude=exclude)
+            self.assertIs(a, result)
+            self.assertDictEqual(expected, result,
+                                 repr([a, b, op, exclude, expected, result]))
+
+
+class TestDictutil(unittest.TestCase):
+
+    def test_subdict(self):
+
+        source_dict = {0: '0', 'a': 'a', 'none': None}
+
+        default_dict = {'b': 'b', 'c': 'c'}
+
+        def iter_default(k):
+            return default_dict.get(k)
+
+        def iter_keys():
+            for i in (0, 'a', 'b'):
+                yield i
+
+        cases = (
+            (
+                ('a', 0),
+                {
+                    'use_default': True,
+                },
+                {0: '0', 'a': 'a'},
+                'normal',
+            ),
+            (
+                ('a', 'b'),
+                {
+                    'use_default': True,
+                    'default': 0,
+                },
+                {'a': 'a', 'b': 0},
+                'use default',
+            ),
+            (
+                ('b', 'c'),
+                {
+                    'use_default': True,
+                    'default': iter_default,
+                },
+                {'b': 'b', 'c': 'c'},
+                'use default as callable',
+            ),
+            (
+                ('b', 'c'),
+                {
+                    'use_default': False,
+                    'default': iter_default,
+                },
+                {},
+                'not use default',
+            ),
+            (
+                iter_keys(),
+                {
+                    'use_default': True,
+                },
+                {0: '0', 'a': 'a', 'b': None},
+                'use keys as interable',
+            ),
+            (
+                ('none',),
+                {
+                    'use_default': True,
+                    'default': 'not None',
+                },
+                {'none': None},
+                'key exists and is None',
+            ),
+        )
+
+        for flds, kwargs, expected, msg in cases:
+            dd('msg: ', msg)
+            dd('expected: ', expected)
+            rst = dictutil.subdict(source_dict, flds, **kwargs)
+            dd('result:   ', rst)
+
+            self.assertEqual(expected, rst)
+
+        test_dict = {'test': 0}
+        source_dict['copy'] = test_dict
+        deepcopy_cases = (
+            (
+                ('copy',),
+                {
+                    'deepcopy': True,
+                },
+                {'copy': {'test': 0}},
+                'test deepcopy value',
+            ),
+            (
+                ('copy',),
+                {},
+                {'copy': test_dict},
+                'test reference value',
+            ),
+
+            (
+                ('default',),
+                {
+                    'use_default': True,
+                    'default': test_dict,
+                    'deepcopy_default': True,
+                },
+                {'default': {'test': 0}},
+                'test deepcopy default',
+            ),
+            (
+                ('default',),
+                {
+                    'use_default': True,
+                    'default': test_dict,
+                },
+                {'default': test_dict},
+                'test reference default',
+            ),
+            (
+                ('copy', 'default'),
+                {
+                    'use_default': True,
+                    'default': test_dict,
+                    'deepcopy': True,
+                },
+                {
+                    'copy': {'test': 0},
+                    'default': test_dict,
+                },
+                'test deepcopy value and reference default',
+            ),
+            (
+                ('copy', 'default'),
+                {
+                    'use_default': True,
+                    'default': test_dict,
+                    'deepcopy_default': True,
+                },
+                {
+                    'copy': test_dict,
+                    'default': {'test': 0},
+                },
+                'test reference value and deepcopy default',
+            ),
+        )
+
+        for flds, kwargs, expected, msg in deepcopy_cases:
+            dd('msg :', msg)
+            dd('expected: ', expected)
+
+            rst = dictutil.subdict(source_dict, flds, **kwargs)
+
+            dd('result:   ', rst)
+
+            self.assertEqual(expected, rst)
+
+            if 'deepcopy' not in kwargs:
+                for k in [x for x in flds if x in source_dict]:
+                    self.assertIs(expected[k], rst[k])
+
+            if 'deepcopy_default' not in kwargs:
+                for k in [x for x in flds if x not in source_dict]:
+                    self.assertIs(expected[k], rst[k])

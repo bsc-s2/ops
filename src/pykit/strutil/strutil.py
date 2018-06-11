@@ -7,7 +7,9 @@ import string
 import sys
 import types
 
+
 listtype = (types.TupleType, types.ListType)
+
 
 def _findquote(line, quote):
     if len(quote) == 0:
@@ -45,6 +47,7 @@ def _findquote(line, quote):
 
     return -1, -1, escape
 
+
 def tokenize(line, sep=None, quote='"\'', preserve=False):
     if sep == quote:
         raise ValueError, 'diffrent sep and quote is required'
@@ -64,8 +67,8 @@ def tokenize(line, sep=None, quote='"\'', preserve=False):
             lines = []
             x = 0
             for e in escape:
-                lines.append(line[x:i+e])
-                x = i+e+1
+                lines.append(line[x:i + e])
+                x = i + e + 1
             lines.append(line[x:])
             line = ''.join(lines)
             n = len(line)
@@ -78,7 +81,7 @@ def tokenize(line, sep=None, quote='"\'', preserve=False):
         if i < sub:
             sub_rst = line[i:sub].split(sep)
             if sep is None:
-                if line[sub-1] in string.whitespace:
+                if line[sub - 1] in string.whitespace:
                     sub_rst.append('')
                 if line[i] in string.whitespace:
                     sub_rst.insert(0, '')
@@ -99,9 +102,9 @@ def tokenize(line, sep=None, quote='"\'', preserve=False):
         head = rst.pop()
 
         if preserve:
-            head += line[i+quote_s:i+quote_e+1]
+            head += line[i + quote_s:i + quote_e + 1]
         else:
-            head += line[i+quote_s+1:i+quote_e]
+            head += line[i + quote_s + 1:i + quote_e]
 
         rst.append(head)
         i += quote_e + 1
@@ -437,6 +440,54 @@ def utf8str(s):
         return str(s)
 
 
+def common_prefix(a, *others, **options):
+
+    recursive = options.get('recursive', True)
+    for b in others:
+        if type(a) != type(b):
+            raise TypeError('a and b has different type: ' + repr((a, b)))
+        a = _common_prefix(a, b, recursive)
+
+    return a
+
+
+def _common_prefix(a, b, recursive=True):
+
+    rst = []
+    for i, elt in enumerate(a):
+        if i == len(b):
+            break
+
+        if type(elt) != type(b[i]):
+            raise TypeError('a and b has different type: ' + repr((elt, b[i])))
+
+        if elt == b[i]:
+            rst.append(elt)
+        else:
+            break
+
+    # Find common prefix of the last different element.
+    #
+    # string does not support nesting level reduction. It infinitely recurses
+    # down.
+    # And non-iterable element is skipped, such as int.
+    i = len(rst)
+    if recursive and i < len(a) and i < len(b) and not isinstance(a, basestring) and hasattr(a[i], '__len__'):
+
+        last_prefix = _common_prefix(a[i], b[i])
+
+        # discard empty tuple, list or string
+        if len(last_prefix) > 0:
+            rst.append(last_prefix)
+
+    if isinstance(a, tuple):
+        return tuple(rst)
+    elif isinstance(a, list):
+        return rst
+    else:
+        return ''.join(rst)
+
+
 def colorize(percent, total=100, ptn='{0}'):
     if total > 0:
         color = fading_color(percent, total)
@@ -462,6 +513,9 @@ class ColoredString(object):
     def __str__(self):
         rst = []
         for e in self.elts:
+            if len(e[0]) == 0:
+                continue
+
             if e[1] is None:
                 val = e[0]
             else:
@@ -499,6 +553,126 @@ class ColoredString(object):
         c.elts = self.elts * num
         return c
 
+    def __eq__(self, other):
+        if not isinstance(other, ColoredString):
+            return False
+        return str(self) == str(other) and self._prompt == other._prompt
+
+    def _find_sep(self, line, sep):
+        ma = re.search(sep, line)
+        if ma is None:
+            return -1, 0
+
+        return ma.span()
+
+    def _recover_colored_str(self, colored_chars):
+        rst = ColoredString('')
+        n = len(colored_chars)
+        if n == 0:
+            return rst
+
+        head = list(colored_chars[0])
+        for ch in colored_chars[1:]:
+            if head[1] == ch[1]:
+                head[0] += ch[0]
+            else:
+                rst += ColoredString(head[0], head[1])
+                head = list(ch)
+        rst += ColoredString(head[0], head[1])
+
+        return rst
+
+    def _split(self, line, colored_chars, sep, maxsplit, keep_sep, keep_empty):
+        rst = []
+        n = len(line)
+        i = 0
+        while i < n:
+            if maxsplit == 0:
+                break
+
+            s, e = self._find_sep(line[i:], sep)
+
+            if s < 0:
+                break
+
+            edge = s
+            if keep_sep:
+                edge = e
+
+            rst.append(self._recover_colored_str(colored_chars[i:i+edge]))
+
+            maxsplit -= 1
+            i += e
+
+        if i < n:
+            rst.append(self._recover_colored_str(colored_chars[i:]))
+
+        # sep in the end
+        # 'a b '  ->  ['a', 'b', '']
+        elif keep_empty:
+            rst.append(ColoredString(''))
+
+        return rst
+
+    def _separate_str_and_colors(self):
+        colored_char = []
+        line = ''
+        for elt in self.elts:
+            for c in elt[0]:
+                colored_char.append((c, elt[1]))
+            line += elt[0]
+
+        return line, colored_char
+
+    def splitlines(self, *args):
+        # to verify arguments
+        ''.splitlines(*args)
+
+        sep = '\r(\n)?|\n'
+        maxsplit = -1
+        keep_empty = False
+        keep_sep = False
+        if len(args) > 0:
+            keep_sep = args[0]
+
+        line, colored_chars = self._separate_str_and_colors()
+
+        return self._split(line, colored_chars, sep, maxsplit, keep_sep, keep_empty)
+
+    def split(self, *args):
+        # to verify arguments
+        ''.split(*args)
+
+        sep, maxsplit = (list(args) + [None, None])[:2]
+        if maxsplit is None:
+            maxsplit = -1
+        keep_empty = True
+        keep_sep = False
+
+        line, colored_chars = self._separate_str_and_colors()
+
+        i = 0
+        if sep is None:
+            sep = '\s+'
+            keep_empty = False
+
+            # to skip whitespaces at the beginning
+            # ' a b'.split() -> ['a', 'b']
+            n = len(line)
+            while i < n and line[i] in string.whitespace:
+                i += 1
+
+        return self._split(line[i:], colored_chars[i:], sep, maxsplit, keep_sep, keep_empty)
+
+    def join(self, iterable):
+        rst = ColoredString('')
+        for i in iterable:
+            if len(rst) == 0:
+                rst += i
+            else:
+                rst += self + i
+        return rst
+
 
 def fading_color(v, total):
     return _clrs[_fading_idx(v, total)]
@@ -535,6 +709,7 @@ _named_colors = {
     'white': 255,
 }
 
+
 def _make_colored_function(name):
     def _colored(v):
         return ColoredString(v, name)
@@ -549,8 +724,12 @@ for _func_name in _named_colors:
 
 
 def break_line(linestr, width):
-    lines = re.split('\n|\r', linestr)
+    lines = linestr.splitlines()
     rst = []
+
+    space = ' '
+    if isinstance(linestr, ColoredString):
+        space = ColoredString(' ')
 
     for line in lines:
         words = line.split(' ')
@@ -561,10 +740,9 @@ def break_line(linestr, width):
                 rst.append(buf)
                 buf = word
             else:
-                buf += ' ' + word
+                buf += space + word
 
         if buf != '':
             rst.append(buf)
 
     return rst
-

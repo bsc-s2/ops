@@ -4,7 +4,6 @@
 import copy
 import errno
 import getopt
-import json
 import logging
 import os
 import sys
@@ -16,9 +15,16 @@ import boto3
 import yaml
 from botocore.client import Config
 
+from pykit import fsutil
 from pykit import jobq
+from pykit import logutil
+from pykit import threadutil
+from pykit import utfjson
+from pykit import utfyaml
 
 report_state_lock = threading.RLock()
+
+logger = logging.getLogger(__name__)
 
 sync_state = {
     'total_n': 0,
@@ -42,34 +48,6 @@ sync_state = {
 }
 
 
-def add_logger():
-
-    log_file = os.path.join(cnf['LOG_DIR'], 'sync_cross_cluster' +
-                            cnf['SRC_BUCKET'] + '.log')
-
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
-
-    file_handler = logging.FileHandler(log_file)
-    formatter = logging.Formatter('[%(asctime)s, %(levelname)s] %(message)s')
-
-    file_handler.setFormatter(formatter)
-
-    logger.addHandler(file_handler)
-
-    return logger
-
-
-def _mkdir(path):
-    try:
-        os.makedirs(path, 0755)
-    except OSError as e:
-        if e[0] == errno.EEXIST and os.path.isdir(path):
-            pass
-        else:
-            raise
-
-
 def _thread(func, args):
     th = threading.Thread(target=func, args=args)
     th.daemon = True
@@ -81,7 +59,7 @@ def _thread(func, args):
 def get_conf(conf_path):
 
     with open(conf_path) as f:
-        conf = yaml.safe_load(f.read())
+        conf = utfyaml.load(f.read())
 
     return conf
 
@@ -102,26 +80,27 @@ def get_boto_client(endpoint, access_key, secret_key):
 
 
 def load_progress():
-    if os.path.isfile(cnf['PROGRESS_FILE']):
-        with open(cnf['PROGRESS_FILE'], 'r') as progress_file:
-            progress = json.loads(progress_file.read())
 
-        return progress
+    progress_file = cnf['PROGRESS_FILE']
 
-    return {
-        'marker': '',
-        'total_n': 0,
-        'total_size': 0,
-    }
+    if os.path.isfile(progress_file):
+        progress = utfjson.load(fsutil.read_file(progress_file))
+    else:
+        progress = {
+            'marker': '',
+            'total_n': 0,
+            'total_size': 0.
+        }
+
+    return progress
 
 
 def store_progress():
-    with open(cnf['PROGRESS_FILE'], 'w') as progress_file:
-        progress_file.write(json.dumps(current_progress))
+    fsutil.write_file(cnf['PROGRESS_FILE'], utfjson.dump(current_progress))
 
 
 def clear_progress():
-    os.remove(cnf['PROGRESS_FILE'])
+    fsutil.remove(cnf['PROGRESS_FILE'])
 
 
 def get_file_info(client, bucket, key):
@@ -232,7 +211,9 @@ def check_dest_file(result):
 
     except Exception as e:
         if hasattr(e, 'message') and 'Not Found' in e.message:
+
             return True
+
         else:
             result['check_dest_file_error'] = {
                 'key': result['dest_key'],
@@ -241,6 +222,7 @@ def check_dest_file(result):
 
             logger.error('faied to get dest file info in {k}: {t}'.format(
                 k=repr(result['dest_key']), t=repr(traceback.format_exc())))
+
             return False
 
     result['exist'] = True
@@ -263,6 +245,7 @@ def check_dest_file(result):
 
                 logger.info('need to overrid file:{k},because CONFIG_OVERRIDE:{m} is configured'.format(
                     k=repr(result['dest_key']), m=metric))
+
                 return True
 
         return False
@@ -386,15 +369,15 @@ def report(sess):
 
 
 def dump_state():
-    with open(cnf['STATE_FILE'], 'w') as stat_file:
-        stat_file.write(json.dumps(sync_state))
+    fsutil.write_file(cnf['STATE_FILE'], utfjson.dump(sync_state))
 
 
 def sync():
 
     try:
         report_sess = {'stop': False}
-        report_th = _thread(report, (report_sess,))
+        report_th = threadutil.start_thread(
+            report, args=(report_sess,), daemon=True)
 
         jobq.run(iter_files(src_client, cnf['SRC_BUCKET']), [(sync_one_file, 3),
                                                              (update_sync_stat, 1),
@@ -403,15 +386,18 @@ def sync():
         report_sess['stop'] = True
         report_th.join()
 
-        report_state()
-        dump_state()
     except KeyboardInterrupt:
+        logger.exception('get KeyboardInterrupt')
+        sys.exit(0)
+
+    finally:
         report_state()
         dump_state()
-        sys.exit(0)
 
 
 if __name__ == "__main__":
+
+    logutil.make_logger(base_dir='/var/log/opstool', level='INFO')
 
     opts, args = getopt.getopt(sys.argv[1:], '', ['conf=', ])
     opts = dict(opts)
@@ -432,10 +418,6 @@ if __name__ == "__main__":
         cnf['DEST_ENDPOINT'],
         cnf['DEST_ACCESS_KEY'],
         cnf['DEST_SECRET_KEY'])
-
-    _mkdir(cnf['LOG_DIR'])
-
-    logger = add_logger()
 
     thread_status = {}
 

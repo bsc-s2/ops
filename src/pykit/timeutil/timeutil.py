@@ -6,6 +6,9 @@ import datetime
 import time
 import types
 
+import pytz
+import tzlocal
+
 formats = {
     'default':        '%a, %d %b %Y %H:%M:%S UTC',
     'utc':            '%a, %d %b %Y %H:%M:%S UTC',
@@ -27,16 +30,21 @@ ts_length = {
 }
 
 
-def parse(time_str, fmt_key):
-    return datetime.datetime.strptime(time_str, _get_format(fmt_key))
+def parse(time_str, fmt_key, timezone=None):
+    dt = datetime.datetime.strptime(time_str, _get_format(fmt_key))
+    if timezone is not None:
+        tz = pytz.timezone(timezone)
+        dt = tz.localize(dt)
+
+    return dt
 
 
 def format(dt, fmt_key):
     return dt.strftime(_get_format(fmt_key))
 
 
-def format_ts(ts, fmt_key):
-    dt = ts_to_datetime(ts)
+def format_ts(ts, fmt_key, utc=True):
+    dt = ts_to_datetime(ts, utc)
     return format(dt, fmt_key)
 
 
@@ -48,8 +56,24 @@ def utc_datetime_to_ts(dt):
     return calendar.timegm(dt.timetuple())
 
 
-def ts_to_datetime(ts):
-    return datetime.datetime.utcfromtimestamp(ts)
+def datetime_to_ts(dt):
+    epoch_dt = datetime.datetime.fromtimestamp(0, tz=pytz.utc)
+
+    if not hasattr(dt, 'tzinfo') or dt.tzinfo is None:
+        local_tz = tzlocal.get_localzone()
+        dt = local_tz.localize(dt)
+
+    delta = dt - epoch_dt
+    ts = delta.total_seconds()
+
+    return ts
+
+
+def ts_to_datetime(ts, utc=True):
+    if utc:
+        return datetime.datetime.utcfromtimestamp(ts)
+    else:
+        return datetime.datetime.fromtimestamp(ts)
 
 
 def ts():

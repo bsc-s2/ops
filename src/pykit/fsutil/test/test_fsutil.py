@@ -73,6 +73,10 @@ class TestFSUtil(unittest.TestCase):
         for k in ('device', 'mountpoint', 'fstype', 'opts'):
             self.assertIn(k, root)
 
+        notall = fsutil.get_disk_partitions(all=False)
+        self.assertTrue(len(rst) > len(notall))
+        self.assertEqual(set([]), set(notall) - set(rst))
+
     def test_get_device(self):
 
         rst = fsutil.get_device('/inexistent')
@@ -145,6 +149,17 @@ class TestFSUtil(unittest.TestCase):
 
         self.assertAlmostEqual(int(total_mb), int(rst_total_mb), delta=4)
 
+    def test_get_path_inode_usage(self):
+
+        inode_st = fsutil.get_path_inode_usage('/')
+
+        self.assertGreaterEqual(inode_st['percent'], 0.0, '')
+        self.assertLessEqual(inode_st['percent'], 1.0, '')
+        self.assertLessEqual(inode_st['used'], inode_st['total'])
+
+        total = inode_st['used'] + inode_st['available']
+        self.assertEqual(inode_st['total'], total)
+
     def test_makedirs(self):
 
         fn = '/tmp/pykit-ut-fsutil-foo'
@@ -186,6 +201,16 @@ class TestFSUtil(unittest.TestCase):
 
         dd('specify uid/gid, to change uid, you need root privilege')
         fsutil.makedirs(fn, uid=1, gid=1)
+
+    def test_get_sub_dirs(self):
+        fsutil.makedirs('test_dir/sub_dir1')
+        fsutil.makedirs('test_dir/sub_dir2')
+        fsutil.write_file('test_dir/test_file', 'foo')
+
+        sub_dirs = fsutil.get_sub_dirs('test_dir')
+        self.assertListEqual(['sub_dir1', 'sub_dir2'], sub_dirs)
+
+        fsutil.remove('test_dir')
 
     def test_makedirs_with_config(self):
 
@@ -314,6 +339,122 @@ class TestFSUtil(unittest.TestCase):
         os.fsync = os_fsync
         force_remove(fn)
 
+    def test_remove_normal_file(self):
+
+        fn = '/tmp/pykit-ut-fsutil-remove-file-normal'
+        force_remove(fn)
+
+        fsutil.write_file(fn, '', atomic=True)
+        self.assertTrue(os.path.isfile(fn))
+
+        fsutil.remove(fn)
+        self.assertFalse(os.path.exists(fn))
+
+    def test_remove_link_file(self):
+
+        src_fn = '/tmp/pykit-ut-fsutil-remove-file-normal'
+        force_remove(src_fn)
+
+        fsutil.write_file(src_fn, '', atomic=True)
+        self.assertTrue(os.path.isfile(src_fn))
+
+        link_fn = '/tmp/pykit-ut-fsutil-remove-file-link'
+        force_remove(link_fn)
+
+        os.link(src_fn, link_fn)
+        self.assertTrue(os.path.isfile(link_fn))
+
+        fsutil.remove(link_fn)
+        self.assertFalse(os.path.exists(link_fn))
+
+        symlink_fn = '/tmp/pykit-ut-fsutil-remove-file-symlink'
+        force_remove(symlink_fn)
+
+        os.symlink(src_fn, symlink_fn)
+        self.assertTrue(os.path.islink(symlink_fn))
+
+        fsutil.remove(symlink_fn)
+        self.assertFalse(os.path.exists(symlink_fn))
+
+        force_remove(src_fn)
+
+    def test_remove_dir(self):
+
+        dirname = '/tmp/pykit-ut-fsutil-remove-dir'
+
+        fsutil.makedirs(dirname)
+        self.assertTrue(os.path.isdir(dirname))
+
+        for is_dir, file_path in (
+                (False, ('normal_file',)),
+                (True,  ('sub_dir',)),
+                (False, ('sub_dir', 'sub_file1')),
+                (False, ('sub_dir', 'sub_file2')),
+                (True,  ('sub_empty_dir',)),
+                (True,  ('sub_dir', 'sub_sub_dir')),
+                (False, ('sub_dir', 'sub_sub_dir', 'sub_sub_file')),
+        ):
+
+            path = os.path.join(dirname, *file_path)
+
+            if is_dir:
+                fsutil.makedirs(path)
+                self.assertTrue(os.path.isdir(path))
+            else:
+                fsutil.write_file(path, '')
+                self.assertTrue(os.path.isfile(path))
+
+        fsutil.remove(dirname)
+        self.assertFalse(os.path.exists(dirname))
+
+    def test_remove_dir_with_link(self):
+
+        dirname = '/tmp/pykit-ut-fsutil-remove-dir'
+
+        fsutil.makedirs(dirname)
+        self.assertTrue(os.path.isdir(dirname))
+
+        normal_file = 'normal_file'
+        normal_path = os.path.join(dirname, normal_file)
+
+        fsutil.write_file(normal_path, '')
+        self.assertTrue(os.path.isfile(normal_path))
+
+        hard_link = 'hard_link'
+        hard_path = os.path.join(dirname, hard_link)
+
+        os.link(normal_path, hard_path)
+        self.assertTrue(os.path.isfile(hard_path))
+
+        symbolic_link = 'symbolic_link'
+        symbolic_path = os.path.join(dirname, symbolic_link)
+
+        os.symlink(hard_path, symbolic_path)
+        self.assertTrue(os.path.islink(symbolic_path))
+
+        fsutil.remove(dirname)
+        self.assertFalse(os.path.exists(dirname))
+
+    def test_remove_error(self):
+
+        dirname = '/tmp/pykit-ut-fsutil-remove-on-error'
+        if os.path.isdir(dirname):
+            fsutil.remove(dirname)
+
+        # OSError
+        self.assertRaises(os.error, fsutil.remove, dirname, False)
+
+        # ignore errors
+        fsutil.remove(dirname, ignore_errors=True)
+
+        def assert_error(exp_func):
+            def onerror(func, path, exc_info):
+                self.assertEqual(func, exp_func)
+            return onerror
+
+        # on error
+        fsutil.remove(dirname, onerror=assert_error(os.remove))
+
     def test_calc_checksums(self):
 
         M = 1024**2
@@ -327,6 +468,7 @@ class TestFSUtil(unittest.TestCase):
                     'sha1':       True,
                     'md5':        True,
                     'crc32':      True,
+                    'sha256':     True,
                     'block_size': M,
                     'io_limit':   M,
                 },
@@ -334,6 +476,7 @@ class TestFSUtil(unittest.TestCase):
                     'sha1':       'da39a3ee5e6b4b0d3255bfef95601890afd80709',
                     'md5':        'd41d8cd98f00b204e9800998ecf8427e',
                     'crc32':      '00000000',
+                    'sha256':     'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
                 },
                 None,
              ),
@@ -347,6 +490,7 @@ class TestFSUtil(unittest.TestCase):
                     'sha1':       None,
                     'md5':        'd41d8cd98f00b204e9800998ecf8427e',
                     'crc32':      '00000000',
+                    'sha256':     None,
                 },
                 None,
              ),
@@ -358,6 +502,7 @@ class TestFSUtil(unittest.TestCase):
                     'sha1':       None,
                     'md5':        None,
                     'crc32':      None,
+                    'sha256':     None,
                 },
                 None,
              ),
@@ -367,6 +512,7 @@ class TestFSUtil(unittest.TestCase):
                     'sha1':       True,
                     'md5':        True,
                     'crc32':      True,
+                    'sha256':     True,
                     'block_size': M,
                     'io_limit':   M,
                 },
@@ -374,6 +520,7 @@ class TestFSUtil(unittest.TestCase):
                     'sha1':       'e22fa5446cb33d0c32221d89ee270dff23e32847',
                     'md5':        '9d245fca88360be492c715253d68ba6f',
                     'crc32':      '7c3becdb',
+                    'sha256':     '7327753b12db5c0dd090ad802c1c8ff44ea4cb447f3091d43cab371bd7583d9a',
                 },
                 None,
              ),
@@ -383,6 +530,7 @@ class TestFSUtil(unittest.TestCase):
                     'sha1':       False,
                     'md5':        True,
                     'crc32':      True,
+                    'sha256':     False,
                     'block_size': M,
                     'io_limit':   M,
                 },
@@ -390,6 +538,7 @@ class TestFSUtil(unittest.TestCase):
                     'sha1':       None,
                     'md5':        '9d245fca88360be492c715253d68ba6f',
                     'crc32':      '7c3becdb',
+                    'sha256':     None,
                 },
                 None,
              ),
@@ -399,11 +548,13 @@ class TestFSUtil(unittest.TestCase):
                     'sha1':       True,
                     'md5':        False,
                     'crc32':      False,
+                    'sha256':     True,
                 },
                 {
                     'sha1':       'e22fa5446cb33d0c32221d89ee270dff23e32847',
                     'md5':        None,
                     'crc32':      None,
+                    'sha256':     '7327753b12db5c0dd090ad802c1c8ff44ea4cb447f3091d43cab371bd7583d9a',
                 },
                 None,
              ),
@@ -413,6 +564,7 @@ class TestFSUtil(unittest.TestCase):
                     'sha1':       False,
                     'md5':        False,
                     'crc32':      False,
+                    'sha256':     False,
                     'block_size': M,
                     'io_limit':   M,
                 },
@@ -420,6 +572,7 @@ class TestFSUtil(unittest.TestCase):
                     'sha1':       None,
                     'md5':        None,
                     'crc32':      None,
+                    'sha256':     None,
                 },
                 (0, 0.5),
              ),
@@ -429,6 +582,7 @@ class TestFSUtil(unittest.TestCase):
                     'sha1':       True,
                     'md5':        True,
                     'crc32':      True,
+                    'sha256':     True,
                     'block_size': M * 10,
                     'io_limit':   M * 10,
                 },
@@ -436,6 +590,8 @@ class TestFSUtil(unittest.TestCase):
                     'sha1':       'c5430d624c498024d0f3371670227a201e910054',
                     'md5':        '8f499b17375fc678c7256f3c0054db79',
                     'crc32':      'f0af209f',
+                    'sha256':     'bd5263cc56b27fda9f86f41f6d2ec012eb60d757281003c363b88677c7dcc5e7',
+
                 },
                 (1, 1.5),
              ),

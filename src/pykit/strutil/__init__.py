@@ -1,4 +1,5 @@
 from .strutil import (
+    common_prefix,
     format_line,
     line_pad,
     tokenize,
@@ -29,7 +30,14 @@ from .strutil import (
     fading_color,
 )
 
+from .trie import (
+    TrieNode,
+    make_trie,
+    sharding,
+)
+
 __all__ = [
+    'common_prefix',
     'format_line',
     'line_pad',
     'tokenize',
@@ -57,4 +65,8 @@ __all__ = [
     'struct_repr',
     'format_table',
     'utf8str',
+
+    'TrieNode',
+    'make_trie',
+    'sharding',
 ]

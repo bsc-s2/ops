@@ -3,7 +3,6 @@ import threading
 
 from pykit import heap
 
-
 default_priority = 10.0
 
 Empty = Queue.Empty
@@ -95,9 +94,11 @@ class PriorityQueue(object):
             self._remove_from_heaps(p)
             self.consumable_heap.push(p)
 
-    def remove_producer(self, producer_id):
+    def remove_producer(self, producer_id, ignore_not_found=False):
 
         with self.heap_lock:
+            if producer_id not in self.producer_by_id and ignore_not_found:
+                return
 
             p = self.producer_by_id[producer_id]
             self._remove_from_heaps(p)

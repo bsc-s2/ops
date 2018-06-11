@@ -5,6 +5,7 @@ import binascii
 import errno
 import hashlib
 import os
+import sys
 import time
 
 import psutil
@@ -67,9 +68,9 @@ def get_device_fs(device):
         return 'unknown'
 
 
-def get_disk_partitions():
+def get_disk_partitions(all=True):
 
-    partitions = psutil.disk_partitions(all=True)
+    partitions = psutil.disk_partitions(all=all)
 
     by_mount_point = {}
     for pt in partitions:
@@ -110,6 +111,22 @@ def get_path_usage(path):
     }
 
 
+def get_path_inode_usage(path):
+
+    inode_st = os.statvfs(path)
+
+    available = inode_st.f_favail
+    total = inode_st.f_files
+    used = total - available
+
+    return {
+        'total': total,
+        'used': used,
+        'available': available,
+        'percent': float(used) / total,
+    }
+
+
 def makedirs(*paths, **kwargs):
     mode = kwargs.get('mode', 0755)
     uid = kwargs.get('uid') or config.uid
@@ -141,22 +158,35 @@ def makedirs(*paths, **kwargs):
         raise
 
 
+def get_sub_dirs(path):
+    files = os.listdir(path)
+
+    sub_dirs = []
+    for f in files:
+        if os.path.isdir(os.path.join(path, f)):
+            sub_dirs.append(f)
+
+    sub_dirs.sort()
+
+    return sub_dirs
+
+
 def read_file(path):
     with open(path, 'r') as f:
         return f.read()
 
 
-def write_file(path, fcont, uid=None, gid=None, atomic=False):
+def write_file(path, fcont, uid=None, gid=None, atomic=False, fsync=True):
 
     if not atomic:
-        return _write_file(path, fcont, uid, gid)
+        return _write_file(path, fcont, uid, gid, fsync)
 
     tmp_path = '{path}._tmp_.{pid}_{timestamp}'.format(
         path=path,
         pid=os.getpid(),
         timestamp=timeutil.ns(),
     )
-    _write_file(tmp_path, fcont, uid, gid)
+    _write_file(tmp_path, fcont, uid, gid, fsync)
 
     try:
         os.rename(tmp_path, path)
@@ -165,7 +195,7 @@ def write_file(path, fcont, uid=None, gid=None, atomic=False):
         raise
 
 
-def _write_file(path, fcont, uid=None, gid=None):
+def _write_file(path, fcont, uid=None, gid=None, fsync=True):
 
     uid = uid or config.uid
     gid = gid or config.gid
@@ -173,22 +203,69 @@ def _write_file(path, fcont, uid=None, gid=None):
     with open(path, 'w') as f:
         f.write(fcont)
         f.flush()
-        os.fsync(f.fileno())
+        if fsync:
+            os.fsync(f.fileno())
 
     if uid is not None and gid is not None:
         os.chown(path, uid, gid)
 
 
-def calc_checksums(path, sha1=False, md5=False, crc32=False,
+def remove(path, ignore_errors=False, onerror=None):
+
+    if onerror is None:
+        onerror = _on_error_raise
+
+    if ignore_errors:
+        onerror = _on_error_pass
+
+    try:
+        is_dir = os.path.isdir(path)
+    except os.error:
+        onerror(os.path.isdir, path, sys.exc_info())
+        return
+
+    if not is_dir:
+        try:
+            os.remove(path)
+        except os.error:
+            onerror(os.remove, path, sys.exc_info())
+        return
+
+    names = []
+    try:
+        names = os.listdir(path)
+    except os.error:
+        onerror(os.listdir, path, sys.exc_info())
+
+    for name in names:
+        fullname = os.path.join(path, name)
+        remove(fullname, ignore_errors, onerror)
+
+    try:
+        os.rmdir(path)
+    except os.error:
+        onerror(os.rmdir, path, sys.exc_info())
+
+
+def _on_error_pass(*args, **kwargs):
+    pass
+
+
+def _on_error_raise(*args, **kwargs):
+    raise
+
+
+def calc_checksums(path, sha1=False, md5=False, crc32=False, sha256=False,
                    block_size=READ_BLOCK, io_limit=READ_BLOCK):
 
     checksums = {
         'sha1': None,
         'md5': None,
         'crc32': None,
+        'sha256': None
     }
 
-    if (sha1 or md5 or crc32) is False:
+    if (sha1 or md5 or crc32 or sha256) is False:
         return checksums
 
     if block_size <= 0:
@@ -202,6 +279,7 @@ def calc_checksums(path, sha1=False, md5=False, crc32=False,
     sum_sha1 = hashlib.sha1()
     sum_md5 = hashlib.md5()
     sum_crc32 = 0
+    sum_sha256 = hashlib.sha256()
 
     with open(path, 'rb') as f_path:
 
@@ -224,6 +302,8 @@ def calc_checksums(path, sha1=False, md5=False, crc32=False,
                 sum_md5.update(buf)
             if crc32:
                 sum_crc32 = binascii.crc32(buf, sum_crc32)
+            if sha256:
+                sum_sha256.update(buf)
 
     if sha1:
         checksums['sha1'] = sum_sha1.hexdigest()
@@ -231,6 +311,8 @@ def calc_checksums(path, sha1=False, md5=False, crc32=False,
         checksums['md5'] = sum_md5.hexdigest()
     if crc32:
         checksums['crc32'] = '%08x' % (sum_crc32 & 0xffffffff)
+    if sha256:
+        checksums['sha256'] = sum_sha256.hexdigest()
 
     return checksums
 

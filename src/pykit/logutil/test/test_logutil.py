@@ -1,7 +1,7 @@
 import errno
 import logging
 import os
-import subprocess
+import subprocess32
 import threading
 import unittest
 
@@ -12,12 +12,12 @@ logger = logging.getLogger(__name__)
 
 def subproc(script, cwd=None):
 
-    subproc = subprocess.Popen(['sh'],
+    subproc = subprocess32.Popen(['sh'],
                                close_fds=True,
                                cwd=cwd,
-                               stdin=subprocess.PIPE,
-                               stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE)
+                               stdin=subprocess32.PIPE,
+                               stdout=subprocess32.PIPE,
+                               stderr=subprocess32.PIPE)
 
     out, err = subproc.communicate(script)
 
@@ -244,8 +244,47 @@ class TestLogutil(unittest.TestCase):
         self.assertEqual(out.strip(), 'info')
 
     def test_add_std_handler(self):
+        rm_file('/tmp/stdlog')
 
         code, out, err = subproc(
             'python stdlog.py', cwd=os.path.dirname(__file__))
         self.assertEqual(0, code)
-        self.assertEqual('stdlog', out.strip())
+        self.assertEqual('error', out.strip())
+
+    def test_set_logger_level(self):
+
+        cases = (
+            (None,                      'debug1\ndebug2'),
+            ('1_prefix',                'debug1\ndebug2\ndebug2'),
+            (('1_prefix', '2_prefix'),  'debug1\ndebug2'),
+            (('not_exist',),            'debug1\ndebug2\ndebug1\ndebug2'),
+            (('not_exist', '1_prefix'), 'debug1\ndebug2\ndebug2'),
+        )
+
+        for inp, expected in cases:
+            rm_file('/tmp/ss')
+
+            logger1 = logutil.make_logger(base_dir='/tmp',
+                                          log_name='1_prefix_1',
+                                          log_fn='ss',
+                                          level='DEBUG',
+                                          fmt='%(message)s',
+                                          datefmt='%H%M%S')
+
+            logger2 = logutil.make_logger(base_dir='/tmp',
+                                          log_name='2_prefix_1',
+                                          log_fn='ss',
+                                          level='DEBUG',
+                                          fmt='%(message)s',
+                                          datefmt='%H%M%S')
+            logger1.debug('debug1')
+            logger2.debug('debug2')
+
+            logutil.set_logger_level(level='INFO', name_prefixes=inp)
+
+            logger1.debug('debug1')
+            logger2.debug('debug2')
+
+            content = read_file('/tmp/ss')
+
+            self.assertEqual(expected, content.strip())

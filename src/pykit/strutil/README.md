@@ -9,12 +9,23 @@
   - [colored command prompt](#colored-command-prompt)
 - [Classes](#classes)
   - [strutil.ColoredString](#strutilcoloredstring)
+    - [ColoredString.join](#coloredstringjoin)
+    - [ColoredString.split](#coloredstringsplit)
+    - [ColoredString.splitlines](#coloredstringsplitlines)
+  - [strutil.TrieNode](#strutiltrienode)
+    - [TrieNode.n](#trienoden)
+    - [TrieNode.char](#trienodechar)
+    - [TrieNode.outstanding](#trienodeoutstanding)
+    - [TrieNode.is_outstanding](#trienodeis_outstanding)
 - [Methods](#methods)
   - [strutil.break_line](#strutilbreak_line)
   - [strutil.color](#strutilcolor)
   - [strutil.colorize](#strutilcolorize)
+  - [strutil.common_prefix](#strutilcommon_prefix)
   - [strutil.line_pad](#strutilline_pad)
+  - [strutil.make_trie](#strutilmake_trie)
   - [strutil.format_line](#strutilformat_line)
+  - [strutil.sharding](#strutilsharding)
   - [strutil.struct_repr](#strutilstruct_repr)
   - [strutil.format_table](#strutilformat_table)
   - [strutil.tokenize](#strutiltokenize)
@@ -146,6 +157,140 @@ It provides the colored string in terminal on Unix.
 **return**:
 An instance of strutil.ColoredString.
 
+### ColoredString.join
+
+**syntax**:
+`ColoredString.join(iterable)`
+
+Return a ColoredString instance which is the concatenation of the elements in
+`iterable`, the separator between elements is the instance providing this method.
+It does not change color of the element. String element has no color in the result.
+
+**arguments**:
+
+-   `iterable`:
+    an iterable whose elements are string values or ColoredString instances.
+
+**return**:
+An instance of strutil.ColoredString.
+
+### ColoredString.split
+
+**syntax**:
+`ColoredString.split([sep[, maxsplit]])`
+
+Return a list of the colored words in the ColoredString. If `maxsplit` is given, at most
+`maxsplit` splits are done. If `maxsplit` is not specified or -1, then there is
+no limit on the number of splits.
+
+If `sep` is given, consecutive delimiters are not grouped together and are
+deemed to delimit empty strings. The `sep` argument may consist of multiple
+characters. Splitting an empty ColoredString with a specified separator returns
+`[ColoredString('')]`.
+
+If `sep` is not specified or is `None`, a diffrent splitting algorithm is
+applied: runs of consecutive whitespace are regarded as a single separator, and
+the result will contain no empty strings at the start or end if the string has
+leading or trailing whitespace. Consequently, splitting an empty string or a
+string consisting of just whitespace with a `None` separator returns `[]`.
+
+Works just like `str.split`.
+
+For example:
+```
+#[ColoredString('hello'), ColoredString('pykit')]
+ColoredString(' hello  pykit ').split()
+
+#[ColoredString('hello', 'red'), ColoredString('pykit', 'blue')]
+color = ColoredString('hello<', 'red') + ColoredString('>pykit', 'blue')
+color.split('<>')
+
+#[ColoredString('hel', 'red'), ColoredString('lo<', 'red')+ColoredString('>pykit', 'blue')]
+color = ColoredString('hel<>lo<', 'red') + ColoredString('>pykit', 'blue')
+color.split('<>', 1)
+```
+
+**arguments**:
+
+-   `sep`:
+    is the delimiter to split the ColoredString. Optional. If `sep` is not
+    specified or is None, then runs of consecutive whitespace are regarded as
+    a single separator.
+
+-   `maxsplit`:
+    is the number of splits. Optional. If `maxsplit` is not specified or -1, then there is
+    no limit on the number of splits.
+
+**return**:
+a list of the colored words.
+
+### ColoredString.splitlines
+
+**syntax**:
+`ColoredString.splitlines([keepend])`
+
+Return a list of the lines in the ColoredString, breaking at line boundaries.
+This method recognizes `"\r"`, `"\n"` and `"\r\n"` as line boundaries. Line
+breaks are not included in the resulting list unless `keepend` is given and true.
+
+Works just like `str.splitlines`.
+
+For example:
+```
+#[ColoredString('hello'), ColoredString('pykit')]
+ColoredString('hello\npykit').splitlines()
+
+#[ColoredString('hello\n', 'red'), ColoredString('pykit\n', 'blue')]
+color = ColoredString('hello\n', 'red') + ColoredString('pykit\n', 'blue')
+color.splitlines(true)
+```
+
+**arguments**:
+
+-   `keepend`:
+    is a bool. If `keepend` is given and true, then line breaks are included in
+    the resulting list. Optional.
+
+**return**:
+a list of the lines in the ColoredString, breaking at line boundaries.
+
+##  strutil.TrieNode
+
+**syntax**:
+`strutil.TrieNode()`
+
+`TrieNode` is a sub class of `dict` to represent a node in trie.
+
+It has the same `__init__` as `dict`.
+
+See `strutil.make_trie`.
+
+
+### TrieNode.n
+
+Total number of items with the prefix represented by this node.  `None` means
+there might be more items with this prefix thus its number can not be decided
+yet.
+
+
+### TrieNode.char
+
+Trie branch key, a single char
+
+
+### TrieNode.outstanding
+
+An outstanding node is a node that there might be more following input string
+which has its corresponding prefix.
+
+This attribute points to the last added child node.
+
+
+### TrieNode.is_outstanding
+
+If this node is an outstanding node to its parent node.  When created, a node
+must be an outstanding node.
+
 
 #   Methods
 
@@ -155,25 +300,29 @@ An instance of strutil.ColoredString.
 **syntax**:
 `strutil.break_line(linestr, width)`
 
-Split a string `linestr` to lines by one space or line break
+Split `linestr` to lines by one space or line break
 to make length of every line no greater than `width`.
+
 Only one space or line break is replaced at a time. Any others stay.
+
+If `linestr` is a ColoredString instance, color of non-blank chars do not change.
 
 Examples:
 ```
 strutil.break_line('foo bar bar.', 9)
-
 #['foo bar', 'bar.']
 
 print strutil.break_line('one   two  three', 4)
-
 #['one ', ' two', '', 'three']
+
+strutil.break_line(ColoredString('foo bar ', 'blue') + ColoredString('bar.', 'red'), 9)
+#[ColoredString('foo', 'blue') + ColoredString(' ') + ColoredString('bar', 'blue'), ColoredString('bar.', 'red')]
 ```
 
 **arguments**:
 
 -   `linestr`:
-    is a string.
+    is a string or a ColoredString instance.
 
 -   `width`:
     is the longest line length expected after being split.
@@ -280,6 +429,38 @@ print colorize(22, 100, '{0:>3}%')
 A colored formatted percent string.
 
 
+##  strutil.common_prefix
+
+Find common prefix of several `string`s, tuples of string, or other nested
+structure, recursively by default.
+It returns the shortest prefix: empty string or empty tuple is removed.
+
+**Synopsis**:
+
+```python
+from pykit import strutil
+
+strutil.common_prefix('abc', 'abd')                   # 'ab'
+strutil.common_prefix((1, 2, 'abc'), (1, 2, 'abd'))   # (1, 2, 'ab')
+strutil.common_prefix((1, 2, 'abc'), (1, 2, 'xyz'))   # (1, 2); empty prefix of 'abc' and 'xyz' is removed
+strutil.common_prefix((1, 2, (5, 6)), (1, 2, (5, 7))) # (1, 2, (5,) )
+strutil.common_prefix('abc', 'abd', 'abe')            # 'ab'; common prefix of more than two
+strutil.common_prefix((1, 2, 'abc'), (1, 2, 'abd'), recursive=False) # (1, 2)
+```
+
+**syntax**:
+`strutil.common_prefix(a, *others, **options)`
+
+**arguments**:
+
+-   `a` and element in `others`:
+    are `string`, `tuple` or `list` to find common prefix of them.
+-   if field `recursive` in `options` is set to `False`, it will run non-recursively.
+
+**return**:
+a common prefix of the same type of `a`.
+
+
 ## strutil.line_pad
 
 **syntax**:
@@ -298,6 +479,86 @@ A colored formatted percent string.
 
 **return**:
 multiple line string with `\n` as line separator, with left padding added.
+
+
+##  strutil.make_trie
+
+**syntax**:
+`strutil.make_trie(sorted_iterable, node_max_num=1)`
+
+Make a [trie](https://en.wikipedia.org/wiki/Trie) from a series of strings.
+It also tries to squash (at most `node_max_num`) leaf nodes to an ancestor to
+reduce memory usage.
+Thus when using it to calculate strings distribution, it achieves accuracy in
+the unit of `node_max_num`.
+
+Building a trie is in `O(n)` time cost, where `n` is total numbers of chars in
+the input.
+
+**Synopsis**:
+
+```python
+from pykit import strutil
+t = strutil.make_trie(
+        (
+            'abc',
+            'abcdef',
+            'abcdeg',
+            'abcdfg',
+            'abd',
+            'abe',
+            'axy',
+            'b11',
+            'b12',
+            'b123',
+            'b14',
+        ), node_max_num=3)
+
+print str(t)
+# 11:  a,7:  b,6:  c,4:  d,3
+#                  d,1
+#                  e,1
+#            x,1
+#      b,4:  1,4:  1,1
+#                  2,2
+#                  4,1
+print str(t['a'])
+# a,7:  b,6:  c,4: d,3
+#             d,1
+#             e,1
+#       x,1
+```
+
+**arguments**:
+
+-   `sorted_iterable`:
+    is an iterable(`list`, `tuple`, `generator` or else) of strings or other
+    comparable elements.
+    Sample of valid `sorted_iterable`:
+
+    ```
+    sorted_iterable = ['abc', 'abd', ]
+
+    sorted_iterable = ('abc', 'abd', )
+
+    sorted_iterable = [(1, 'x'), (1, 'y'), ]
+
+    def gen():
+        for i in range(3):
+            yield (i,)
+    sorted_iterable = gen()
+    ```
+
+    Elements in it must be sorted ascending or descending.
+
+-   `node_max_num`:
+    specifies the maximum number of strings a leaf node can have.
+    If total number of all the leaf nodes of a parent node smaller or equal
+    `node_max_num`, it squash leaf nodes to their parent.
+
+**return**:
+a `TrieNode` instance, which is the root of a trie.
+
 
 ## strutil.format_line
 
@@ -339,6 +600,82 @@ strutil.format_line([["name:", "age:"], ["drdrxp", "18"], "wow"], sep=" | ", ali
 
 **return**:
 formatted string.
+
+
+##  strutil.sharding
+
+**syntax**:
+`strutil.sharding(sorted_iterable, size, accuracy=None, joiner=''.join)`
+
+Split `sorted_iterable` into segments, each one of those contains
+`size` to `size + accuracy` strings, except the last one.
+
+Time complexity is `O(n)`, where `n` is the total number of chars in all strings.
+It uses a trie as underlying storage to track string distribution.
+See `strutil.make_trie`.
+
+It returns a list of tuples contains start key and segment size.
+
+-   The start key is a prefix of one of `sorted_iterable`.
+    If `sorted_iterable` is a list of strings, start key is a prefix string.
+    If `joiner` is specified, start key is constructed with `joiner`.
+
+-   A start key are always shortened to the minimal size.
+
+-   The first start key is always `None`.
+
+-   The smaller `accuracy` is, the more memory is cost, because it need to track
+    more distribution information during scanning the strings.
+    `accuracy=1` let it track every single char in all strings.
+
+```python
+from pykit import strutil
+with open('words.txt') as f:
+    lines=f.readlines()
+    lines=[x.strip() for x in lines]
+
+print strutil.sharding(lines, size=200, accuracy=20)
+# [
+#     (None    , 209, ),
+#     ('M'     , 202, ),
+#     ('TestU' , 202, ),
+#     ('br'    , 202, ),
+#     ('dc'    , 201, ),
+#     ('exi'   , 202, ),
+#     ('inf'   , 204, ),
+#     ('may'   , 205, ),
+#     ('pf'    , 200, ),
+#     ('rew'   , 208, ),
+#     ('suc'   , 204, ),
+#     ('wh'    , 56,  ),
+# ]
+```
+
+**arguments**:
+
+-   `sorted_iterable`:
+    an iterable of strings, it can be a `list`, `tuple` or `generator`.
+    **All strings in it must be sorted**.
+
+-   `size`:
+    specifies the expected minimal segment size.
+
+-   `accuracy`:
+    specifies the acceptable variance of segment size.
+    The result segment size is between `size` and `size + accuracy`.
+
+    By default it is `size / 10`
+
+-   `joiner`:
+    specifies what function to use to reconstructe a sharding key from trie-node-path.
+
+    By default it reconstruct a string from a list of chars.
+
+    To generate `tuple` sharding keys: use `strutil.sharding(.., joiner=tuple)`.
+
+**return**:
+a list of tuple.
+
 
 ##  strutil.struct_repr
 

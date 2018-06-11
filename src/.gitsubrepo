@@ -1,0 +1,11 @@
+[ remote_suffix: .git ]
+
+[ base: ]
+
+git-subrepo baishancloud/git-subrepo       master   git-subrepo
+pykit       bsc-s2/pykit                   master   pykit
+
+
+# git-subrepo
+#   for maintaining sub git repo
+#   https://github.com/baishancloud/git-subrepo

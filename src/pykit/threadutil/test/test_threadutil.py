@@ -1,12 +1,11 @@
 #!/usr/bin/env python2
 # coding: utf-8
 
-import unittest
-import threading
 import time
+import unittest
 
 from pykit import threadutil
-
+from pykit import ututil
 
 tu = threadutil.threadutil
 
@@ -88,13 +87,13 @@ class TestThreadutil(unittest.TestCase):
         self.assertEqual(array, [1, 2, 3])
 
         t = tu.start_thread(_sort, args=(array, ),
-                                    kwargs={'reverse': True})
+                            kwargs={'reverse': True})
         t.join()
 
         self.assertEqual(array, [3, 2, 1])
 
-    def test_start_daemon_thread(self):
-        noop = lambda : None
+    def test_start_daemon(self):
+        def noop(): return None
 
         # Thread should be non-daemon by default
         t = tu.start_thread(noop)
@@ -103,5 +102,35 @@ class TestThreadutil(unittest.TestCase):
         t = tu.start_thread(noop, daemon=True)
         self.assertTrue(t.daemon)
 
-        t = tu.start_daemon_thread(noop)
+        t = tu.start_daemon(noop)
         self.assertTrue(t.daemon)
+
+    def test_thread_after(self):
+
+        def _do():
+            pass
+
+        with ututil.Timer() as t:
+            th = tu.start_thread(target=_do, after=None)
+            th.join()
+            self.assertAlmostEqual(0, t.spent(), delta=0.1)
+
+        with ututil.Timer() as t:
+            th = tu.start_thread(target=_do, after=0.5)
+            th.join()
+            self.assertAlmostEqual(0.5, t.spent(), delta=0.1)
+
+    def test_daemon_after(self):
+
+        def _do():
+            pass
+
+        with ututil.Timer() as t:
+            th = tu.start_daemon(target=_do, after=None)
+            th.join()
+            self.assertAlmostEqual(0, t.spent(), delta=0.1)
+
+        with ututil.Timer() as t:
+            th = tu.start_daemon(target=_do, after=0.5)
+            th.join()
+            self.assertAlmostEqual(0.5, t.spent(), delta=0.1)

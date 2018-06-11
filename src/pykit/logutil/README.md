@@ -17,6 +17,7 @@
   - [logutil.make_file_handler](#logutilmake_file_handler)
   - [logutil.make_formatter](#logutilmake_formatter)
   - [logutil.make_logger](#logutilmake_logger)
+  - [logutil.set_logger_level](#logutilset_logger_level)
   - [logutil.stack_format](#logutilstack_format)
   - [logutil.stack_list](#logutilstack_list)
   - [logutil.stack_str](#logutilstack_str)
@@ -78,7 +79,7 @@ It has the same `__init__` arguments with
 ##  logutil.add_std_handler
 
 **syntax**:
-`logutil.add_std_handler(logger, stream=None, fmt=None, datefmt=None)`
+`logutil.add_std_handler(logger, stream=None, fmt=None, datefmt=None, level=None)`
 
 It adds a `stdout` or `stderr` steam handler to the `logger`.
 
@@ -103,6 +104,12 @@ It adds a `stdout` or `stderr` steam handler to the `logger`.
     It can be an alias name(like `time`) that can be used in
     `logutil.get_datefmt()`.
     By default it is `None`.
+
+-   `level`:
+    is the log level.
+    It can be int value such as `logging.DEBUG` or string such as `DEBUG`.
+    By default it is the logger's level.
+
 
 **return**:
 the `logger` argument.
@@ -332,6 +339,22 @@ It creates a logger with a rolling file hander and specified formats.
 
 **return**:
 a `logging.Logger` instance.
+
+##  logutil.set_logger_level
+
+**syntax**:
+`logutil.set_logger_level(level=logging.INFO, name_prefixes=None)`
+
+**arguments**:
+
+-   `level`:
+    specifies log level.
+    It could be int value such as `logging.DEBUG` or string such as `DEBUG`.
+
+-   `name_prefixes`:
+    specifies log prefixes which is operated.
+    It can be None, str or a tuple of str.
+    If `name_prefixes` is None, set the log level for all logger.
 
 ##  logutil.stack_format
 

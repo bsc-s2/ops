@@ -12,10 +12,15 @@
   - [Supported config](#supported-config)
 - [Test](#test)
 - [For developer](#for-developer)
+  - [Config](#config)
+    - [How it works](#how-it-works)
+    - [How to use](#how-to-use)
 - [Author](#author)
 - [Copyright and License](#copyright-and-license)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
+
 
 #   Name
 
@@ -38,9 +43,11 @@ There is a `README.md` for each module.
 
 | name                           | description                                                                           |
 | :--                            | :--                                                                                   |
+| [argchecker](argchecker)       | Validates arguments against the schema                                                |
 | [aws](aws)                     | AWS error codes and so on                                                             |
 | [cacheable](cacheable)         | Cache data which access frequently                                                    |
 | [cachepool](cachepool)         | Reusable object cache in process                                                      |
+| [cluster](cluster)             | Some helper function for the server in a cluster                                      |
 | [daemonize](daemonize)         | Start, stop or restart a daemon process                                               |
 | [dictutil](dictutil)           | Dictionary helper utility                                                             |
 | [etcd](etcd)                   | etcd client                                                                           |
@@ -59,14 +66,21 @@ There is a `README.md` for each module.
 | [priorityqueue](priorityqueue) | Priority queue                                                                        |
 | [proc](proc)                   | Utility to create sub process                                                         |
 | [rangeset](rangeset)           | Segmented range.                                                                      |
+| [ratelimiter](ratelimiter)     | rate limiter                                                                          |
 | [redisutil](redisutil)         | For using redis more easily.                                                          |
 | [shell](shell)                 | Set different command arguments to execute different functions                        |
 | [strutil](strutil)             | A collection of helper functions used to manipulate string                            |
 | [threadutil](threadutil)       | Utility functions for better management of threads                                    |
 | [timeutil](timeutil)           | Support specify time format output and get current ts, ms, us api etc                 |
 | [utfjson](utfjson)             | Force `json.dump` and `json.load` in `utf-8` encoding                                 |
+| [utfyaml](utfyaml)             | Force `yaml.dump` and `yaml.load` in `utf-8` encoding                                 |
 | [wsjobd](wsjobd)               | Job daemon based on websocket protocol                                                |
 | [zkutil](zkutil)               | Utility functions for zookeeper                                                       |
+
+
+## Module dependency
+
+![](dep-graph.jpg)
 
 #   Install
 
@@ -97,46 +111,31 @@ jobq.run([0, 1, 2], [add1, printarg])
 
 #   Configuration
 
-`pykit` provides a way to setup config for it.
-Some module tries to import `pykitconfig` in which a user sets config.
-Example:
+See [config.md](config.md)
 
-```
-> cat pykitconfig.py
-uid = 2
-gid = 3
-
-> cat foo.py
-from pykit import fsutil
-fsutil.write_file('bar', '123') # write_file sets file uid and gid to 2 and 3.
-```
-
-##  Supported config
-
--   `uid`: specifies default user-id  when file created, directory made.
--   `gid`: specifies default group-id when file created, directory made.
--   `log_dir`: specifies default base_dir when logger created.
-
-
-See the `README.md` of sub modules for detail.
 
 #   Test
 
 Run one of following to test all, a module, a TestCase or a function.
 
 ```
-./script/t.sh
-./script/t.sh zkutil
-./script/t.sh zkutil.test
-./script/t.sh zkutil.test.test_zkutil
-./script/t.sh zkutil.test.test_zkutil.TestZKUtil
-./script/t.sh zkutil.test.test_zkutil.TestZKUtil.test_lock_data
+./script/t
+./script/t zkutil
+./script/t zkutil.test
+./script/t zkutil.test.test_zkutil
+./script/t zkutil.test.test_zkutil.TestZKUtil
+./script/t zkutil.test.test_zkutil.TestZKUtil.test_lock_id
 ```
+
+See [Details](script/README.md)
 
 #   For developer
 
 There are several scripts for developers.
 See [script](script).
+
+
+
 
 #   Author
 

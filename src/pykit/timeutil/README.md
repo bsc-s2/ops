@@ -11,6 +11,7 @@
   - [timeutil.format](#timeutilformat)
   - [timeutil.format_ts](#timeutilformat_ts)
   - [timeutil.utc_datetime_to_ts](#timeutilutc_datetime_to_ts)
+  - [timeutil.datetime_to_ts](#timeutildatetime_to_ts)
   - [timeutil.ts_to_datetime](#timeutilts_to_datetime)
   - [timeutil.ts](#timeutilts)
   - [timeutil.ms](#timeutilms)
@@ -63,7 +64,7 @@ Utility functions for time related operation.
 
 **syntax**:
 
-`timeutil.parse(time_str, fmt_key)`
+`timeutil.parse(time_str, fmt_key, timezone=None)`
 
 parse time string to datetime instance.
 
@@ -90,6 +91,10 @@ parse time string to datetime instance.
     ```
 
     Thus `parse(tm, "default")` is same as `parse(tm, "%a, %d %b %Y %H:%M:%S UTC")`.
+
+-   `timezone`:
+    specify a timezone to get an aware datetime object. It is a string,
+    such as 'Asia/Shanghai'.
 
 **return**:
 datetime instance
@@ -118,7 +123,7 @@ convert datetime instance to specify format time string
 
 **syntax**:
 
-`timeutil.format_ts(ts, fmt_key)`
+`timeutil.format_ts(ts, fmt_key, utc=True)`
 
 convert timestamp to specify format time string
 
@@ -130,6 +135,9 @@ convert timestamp to specify format time string
 -   `fmt_key`:
     specify time string format.
     It can be a named format alias, or format string.
+
+-   `utc`:
+    set to `True` to get utc time, set to `False` to get local time.
 
 **return**:
     specify format time string
@@ -146,6 +154,23 @@ convert datetime instance to timestamp in second
 
 -   `dt`:
     datetime instance
+
+**return**:
+    timestamp in second
+
+##  timeutil.datetime_to_ts
+
+**syntax**:
+
+`datetime_to_ts(dt)`
+
+convert naive or aware datetime instance to timestamp in second
+
+**arguments**:
+
+-   `dt`:
+    datetime instance, if it does not contain timezone info, we
+    assume it has a local timezone.
 
 **return**:
     timestamp in second

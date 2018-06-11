@@ -10,6 +10,7 @@
   - [jobq.run](#jobqrun)
   - [jobq.stat](#jobqstat)
   - [jobq.EmptyRst](#jobqemptyrst)
+  - [jobq.limit_job_speed](#jobqlimitjobspeed)
   - [jobq.JobManager](#jobqjobmanager)
   - [jobq.JobManager.put](#jobqjobmanagerput)
   - [jobq.JobManager.join](#jobqjobmanagerjoin)
@@ -110,7 +111,8 @@ Process element from input one by one with functions in workers.
     can be used in a for-loop.
 
 -   `workers`:
-    list of functions, or `tuple` of `(function, nr_of_thread)`.
+    list of functions, or `tuple` of `(function, nr_of_thread)`,
+    or `tuple` of `(function, nr_of_thread, dispatcher_func)`.
 
     A worker must accept one argument and return one value.
     A typical worker would be defined like:
@@ -129,6 +131,29 @@ Process element from input one by one with functions in workers.
         for elt in args:
             yield elt
     ```
+
+    A `dispatcher` is specified by user to control how to dispatch args to
+    different workers.
+    It should accept one argument `args`, same as the `args` passed to a worker
+    function,  and return a `int` indicating which worker to used.
+
+    A dispatcher function might be defined like:
+
+    ```
+    def dispatch(args):
+        return hash(args) % 5
+    ```
+
+    A user-defined dipatcher is used when **concurrency** and **partial-order**
+    are both required:
+    -   The `args` passed to a same worker is guaranteed to be
+        executed in order.
+    -   Different workers still run multiple tasks concurrently.
+
+    **If a `dispatcher` specified, it implies `keep_order=True`**.
+
+    Thus a worker group with dispatcher also put result into input queue of next
+    worker group with order kept.
 
 -   `keep_order`:
     specifies whether elements must be processed in order.
@@ -194,6 +219,24 @@ def worker_back_hole(args):
 ```
 
 >   If `None` is returned by a worker, `None` is passed to next worker.
+
+##  jobq.limit_job_speed
+
+**syntax**:
+`jobq.limit_job_speed(max_job_speed, job_step)`
+
+A work that limits the speed at which job is executed.
+
+**arguments**:
+-   `max_job_speed`:
+    is a integer or function, represents the maximum execution job speed,
+    If it is a function, use the return value of the function.
+
+-   `job_step`:
+    is a integer, represents the step length of a job, the default is 1.
+
+**return**:
+None
 
 ## jobq.JobManager
 
