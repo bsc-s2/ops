@@ -2,3 +2,8 @@
 
 bin/git-subrepo             baishancloud/git-subrepo        master      git-subrepo
 src/pykit                   baishancloud/pykit              master
+
+
+# git-subrepo
+#   for maintaining sub git repo
+#   https://github.com/baishancloud/git-subrepo
