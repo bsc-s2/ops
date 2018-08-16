@@ -2,6 +2,7 @@
 
 bin/git-subrepo             baishancloud/git-subrepo        master      git-subrepo
 src/pykit                   baishancloud/pykit              master
+src/shlib.sh                baishancloud/shlib              master      dist/shlib.sh
 
 
 # git-subrepo
