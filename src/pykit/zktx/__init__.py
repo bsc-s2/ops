@@ -7,15 +7,16 @@ from .exceptions import (
     Aborted,
     ConnectionLoss,
     Deadlock,
-    HigherTXApplied,
     RetriableError,
     TXError,
     TXTimeout,
+    NotLocked,
+    UnlockNotAllowed,
     UserAborted,
+    CommitError,
 )
 
 from .status import (
-    ABORTED,
     COMMITTED,
     PURGED,
 
@@ -40,7 +41,9 @@ from .zktx import (
     TXRecord,
     ZKTransaction,
 
+    list_recoverable,
     run_tx,
+
 )
 
 from .redisstorage import (
@@ -63,13 +66,15 @@ __all__ = [
     "Aborted",
     "ConnectionLoss",
     "Deadlock",
-    "HigherTXApplied",
     "RetriableError",
     "TXError",
     "TXTimeout",
     "UserAborted",
+    "CommitError",
+    "NotLocked",
+    "UnlockNotAllowed",
 
-    "ABORTED",
+
     "COMMITTED",
     "PURGED",
 
@@ -86,6 +91,7 @@ __all__ = [
     "TXRecord",
     "ZKTransaction",
 
+    "list_recoverable",
     "run_tx",
 
     "RedisStorage",

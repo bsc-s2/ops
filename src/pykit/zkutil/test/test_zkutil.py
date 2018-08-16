@@ -7,7 +7,6 @@ from kazoo import security
 from kazoo.client import KazooClient
 from kazoo.exceptions import ConnectionClosedError
 from kazoo.exceptions import NoNodeError
-
 from pykit import config
 from pykit import net
 from pykit import threadutil
@@ -294,7 +293,7 @@ class TestZKinit(unittest.TestCase):
         utdocker.start_container(
             zk_name,
             zk_tag,
-            port_bindings={2181: 2181}
+            port_bindings={2181: 21811}
         )
 
         dd('start zk-test in docker')
@@ -309,7 +308,7 @@ class TestZKinit(unittest.TestCase):
     def test_init_hierarchy(self):
 
         auth = ('digest', 'aa', 'pw_aa')
-        hosts = '127.0.0.1:2181'
+        hosts = '127.0.0.1:21811'
         users = {'aa': 'pw_aa', 'bb': 'pw_bb', 'cc': 'pw_cc'}
         hierarchy = {
             'node1':
@@ -351,19 +350,19 @@ class TestZKinit(unittest.TestCase):
         zkcli.add_auth('digest', 'aa:pw_aa')
 
         expected_nodes = (
-            ('/node1', 'node1_val', [('digest', 'aa', 'cdrwa'),
-                                     ('digest', 'bb', 'rw')], set(['node11', 'node12', 'node13'])),
-            ('/node1/node11', 'node11_val',
+            ('/node1', '"node1_val"', [('digest', 'aa', 'cdrwa'),
+                                       ('digest', 'bb', 'rw')], set(['node11', 'node12', 'node13'])),
+            ('/node1/node11', '"node11_val"',
              [('digest', 'aa', 'cdrwa'), ('digest', 'cc', 'r')], set([])),
-            ('/node1/node12', 'node12_val',
+            ('/node1/node12', '"node12_val"',
              [('digest', 'aa', 'cdrwa'), ('digest', 'bb', 'rw')], set(['node121'])),
-            ('/node1/node12/node121', 'node121_val',
+            ('/node1/node12/node121', '"node121_val"',
              [('digest', 'aa', 'cdrwa'), ('digest', 'bb', 'rw')], set([])),
             ('/node1/node13', '{}', [('digest', 'aa', 'cdrwa')], set([])),
 
-            ('/node2', 'node2_val',
+            ('/node2', '"node2_val"',
              [('world', 'anyone', 'cdrwa')], set(['node21', 'node22'])),
-            ('/node2/node21', 'node21_val',
+            ('/node2/node21', '"node21_val"',
              [('world', 'anyone', 'cdrwa')],  set([])),
             ('/node2/node22', '{}', [('digest', 'aa', 'rwa')],  set([])),
 
@@ -388,6 +387,158 @@ class TestZKinit(unittest.TestCase):
 
         zkcli.stop()
 
+    def test_export_hierarchy(self):
+
+        auth = ('digest', 'aa', 'pw_aa')
+        hosts = '127.0.0.1:21811'
+        users = {'aa': 'pw_aa', 'bb': 'pw_bb', 'cc': 'pw_cc'}
+
+        hierarchy = {
+            'node0': {
+                '__val__': '',
+                '__acl__': {'aa': 'cdrwa', 'bb': 'rw'}},
+            'node1': {
+                '__val__': 'node1_val',
+                '__acl__': {'aa': 'cdrwa', 'bb': 'rw'},
+                'node11': {
+                    '__val__': 'node11_val',
+                    '__acl__': {'aa': 'cdrwa', 'cc': 'r'},
+                },
+                'node12': {
+                    '__val__': 'node12_val',
+                    'node121': {'__val__': 'node121_val'}
+                },
+                'node13': {
+                    '__acl__': {'aa': 'cdrwa'}
+                }
+            },
+            'node2': {
+                '__val__': 'node2_val',
+                'node21': {'__val__': 'node21_val'},
+                'node22': {'__acl__': {'aa': 'rwa'}}
+            },
+            'node3': {
+                '__acl__': {'aa': 'carw', 'cc': 'r'},
+                'node31': {
+                    'node311': {
+                        'node3111': {},
+                        'node3112': {}
+                    }
+                }
+            }
+        }
+
+        zkutil.zkutil.init_hierarchy(hosts, hierarchy, users, auth)
+
+        zkcli = KazooClient(hosts)
+        zkcli.start()
+        zkcli.add_auth('digest', 'aa:pw_aa')
+
+        invalid_zkpath_cases = ('a', 'a/', 'a/b')
+
+        for zkpath in invalid_zkpath_cases:
+            with self.assertRaises(zkutil.zkutil.ZkPathError):
+                zkutil.zkutil.export_hierarchy(zkcli, zkpath)
+
+        valid_cases = (
+            ('/', {'__acl__': {u'anyone': 'cdrwa'},
+                   '__val__': '',
+                   u'node0': {
+                   '__acl__': {u'aa': 'cdrwa', u'bb': 'rw'},
+                   '__val__': '""'},
+                   u'node1': {
+                   '__acl__': {u'aa': 'cdrwa', u'bb': 'rw'},
+                   '__val__': '"node1_val"',
+                   u'node11': {
+                       '__acl__': {u'aa': 'cdrwa', u'cc': 'r'},
+                       '__val__': '"node11_val"'},
+                   u'node12': {
+                       '__acl__': {u'aa': 'cdrwa', u'bb': 'rw'},
+                       '__val__': '"node12_val"',
+                       u'node121': {
+                           '__acl__': {u'aa': 'cdrwa', u'bb': 'rw'},
+                           '__val__': '"node121_val"'}},
+                   u'node13': {
+                       '__acl__': {u'aa': 'cdrwa'},
+                       '__val__': '{}'}},
+                   u'node2': {
+                   '__acl__': {u'anyone': 'cdrwa'},
+                   '__val__': '"node2_val"',
+                   u'node21': {
+                       '__acl__': {u'anyone': 'cdrwa'},
+                       '__val__': '"node21_val"'},
+                   u'node22': {'__acl__': {u'aa': 'rwa'}, '__val__': '{}'}},
+                   u'node3': {
+                   '__acl__': {u'aa': 'rwca', u'cc': 'r'},
+                   '__val__': '{}',
+                   u'node31': {
+                       '__acl__': {u'aa': 'rwca', u'cc': 'r'},
+                       '__val__': '{}',
+                       u'node311': {
+                           '__acl__': {u'aa': 'rwca', u'cc': 'r'},
+                           '__val__': '{}',
+                           u'node3111': {
+                               '__acl__': {u'aa': 'rwca', u'cc': 'r'},
+                               '__val__': '{}'},
+                           u'node3112': {
+                               '__acl__': {u'aa': 'rwca', u'cc': 'r'},
+                               '__val__': '{}'}}}},
+                   u'zookeeper': {
+                   '__acl__': {u'anyone': 'cdrwa'},
+                   '__val__': '',
+                   u'quota': {
+                       '__acl__': {u'anyone': 'cdrwa'},
+                       '__val__': ''}}}),
+            ('/node0', {
+                '__acl__': {u'aa': 'cdrwa', u'bb': 'rw'},
+             '__val__': '""'}),
+            ('/node1', {
+                '__acl__': {u'aa': 'cdrwa', u'bb': 'rw'},
+             '__val__': '"node1_val"',
+             u'node11': {
+                 '__acl__': {u'aa': 'cdrwa', u'cc': 'r'},
+                 '__val__': '"node11_val"'},
+             u'node12': {
+                 '__acl__': {u'aa': 'cdrwa', u'bb': 'rw'},
+                 '__val__': '"node12_val"',
+                 u'node121': {
+                     '__acl__': {u'aa': 'cdrwa', u'bb': 'rw'},
+                     '__val__': '"node121_val"'}},
+             u'node13': {
+                 '__acl__': {u'aa': 'cdrwa'},
+                 '__val__': '{}'}}),
+            ('/node1/node11', {
+                '__acl__': {u'aa': 'cdrwa', u'cc': 'r'},
+                '__val__': '"node11_val"'}),
+            ('/node2', {
+                '__acl__': {u'anyone': 'cdrwa'},
+                '__val__': '"node2_val"',
+                u'node21': {
+                    '__acl__': {u'anyone': 'cdrwa'},
+                    '__val__': '"node21_val"'},
+                u'node22': {
+                    '__acl__': {u'aa': 'rwa'},
+                    '__val__': '{}'}}),
+            ('/node3', {
+                '__acl__': {u'aa': 'rwca', u'cc': 'r'},
+                '__val__': '{}',
+                u'node31': {
+                    '__acl__': {u'aa': 'rwca', u'cc': 'r'},
+                    '__val__': '{}',
+                    u'node311': {
+                        '__acl__': {u'aa': 'rwca', u'cc': 'r'},
+                        '__val__': '{}',
+                        u'node3111': {'__acl__': {u'aa': 'rwca', u'cc': 'r'},
+                                      '__val__': '{}'},
+                        u'node3112': {'__acl__': {u'aa': 'rwca', u'cc': 'r'},
+                                      '__val__': '{}'}}}}))
+
+        for path, expected_rst in valid_cases:
+            rst = zkutil.export_hierarchy(zkcli, path)
+            self.assertEqual(rst, expected_rst)
+
+        zkcli.stop()
+
 
 class TestWait(unittest.TestCase):
 
@@ -405,10 +556,10 @@ class TestWait(unittest.TestCase):
                 "ZOO_MY_ID": 1,
                 "ZOO_SERVERS": "server.1=0.0.0.0:2888:3888",
             },
-            port_bindings={2181: 2181}
+            port_bindings={2181: 21811}
         )
 
-        self.zk = KazooClient('127.0.0.1:2181')
+        self.zk = KazooClient('127.0.0.1:21811')
         self.zk.start()
 
         dd('start zk-test in docker')
@@ -604,7 +755,8 @@ class TestWait(unittest.TestCase):
             th = threadutil.start_daemon(target=_set_a, after=0.3)
 
             with ututil.Timer() as t:
-                val, zstat = zkutil.get_next(self.zk, 'a', timeout=timeout, version=0)
+                val, zstat = zkutil.get_next(
+                    self.zk, 'a', timeout=timeout, version=0)
                 self.assertAlmostEqual(0.3, t.spent(), delta=0.2)
                 self.assertEqual('changed', val)
                 self.assertEqual(1, zstat.version)

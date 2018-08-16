@@ -22,9 +22,9 @@ class Unmergeable(RangeException):
     pass
 
 
-class Range(list):
+class ValueRange(list):
 
-    def __init__(self, left, right):
+    def __init__(self, left, right, val=None):
 
         assert_compatible(left, right)
 
@@ -32,35 +32,60 @@ class Range(list):
             raise ValueError('left not smaller or equal right: {left}, {right}'.format(
                 left=left, right=right))
 
-        super(Range, self).__init__([left, right])
+        super(ValueRange, self).__init__([left, right, val])
 
     def cmp(self, b):
 
         # if a and b can be merged into one range, we say a == b
+        #
+        # Different from Range: adjacent ValueRange-s are not equal,
+        # because they have their own value bound and can not be merged.
 
-        if cmp_boundary(self[0], b[1]) > 0:
+        if cmp_boundary(self[0], b[1]) >= 0:
             return 1
 
-        if cmp_boundary(b[0], self[1]) > 0:
+        if cmp_boundary(b[0], self[1]) >= 0:
             return -1
 
         # incomparable: overlapping or adjacent ranges
         return 0
 
-    def cmp_left(self, b):
-        # left is None means it is negative infinite
-        return cmp_val(self[0], b[0], none_cmp_finite=-1)
+    def intersect(self, b):
 
-    def cmp_right(self, b):
+        if self.cmp(b) != 0:
+            return None
+
+        rst = [None, None] + self[2:]
+
+        if self.cmp_left(b[0]) < 0:
+            rst[0] = b[0]
+        else:
+            rst[0] = self[0]
+
+        if self.cmp_right(b[1]) > 0:
+            rst[1] = b[1]
+        else:
+            rst[1] = self[1]
+
+        if rst[0] is not None and rst[0] == rst[1]:
+            return None
+
+        return rst
+
+    def cmp_left(self, pos):
+        # left is None means it is negative infinite
+        return cmp_val(self[0], pos, none_cmp_finite=-1)
+
+    def cmp_right(self, pos):
         # right is None means it is positive infinite
-        return cmp_val(self[1], b[1], none_cmp_finite=1)
+        return cmp_val(self[1], pos, none_cmp_finite=1)
 
     def is_adjacent(self, b):
         return cmp_boundary(b[0], self[1]) == 0
 
-    def has(self, val):
-        return (cmp_val(self[0], val, none_cmp_finite=-1) <= 0
-                and cmp_val(val, self[1], none_cmp_finite=1) < 0)
+    def has(self, pos):
+        return (self.cmp_left(pos) <= 0
+                and self.cmp_right(pos) > 0)
 
     def length(self):
         if self[0] is None or self[1] is None:
@@ -68,7 +93,7 @@ class Range(list):
 
         if isinstance(self[0], basestring):
 
-            a, b = self
+            a, b = self[:2]
             l = max([len(a), len(b)])
 
             rst = 0.0
@@ -92,13 +117,45 @@ class Range(list):
             return self[1] - self[0]
 
     def dup(self):
-        return self.__class__(self[0], self[1])
+        return self.__class__(*self)
 
     def next_left(self):
         return self[1]
 
     def prev_right(self):
         return self[0]
+
+    def val(self):
+        return self[2]
+
+
+class Range(ValueRange):
+
+    def __init__(self, left, right):
+
+        assert_compatible(left, right)
+
+        if cmp_boundary(left, right) > 0:
+            raise ValueError('left not smaller or equal right: {left}, {right}'.format(
+                left=left, right=right))
+
+        super(ValueRange, self).__init__([left, right])
+
+    def cmp(self, b):
+
+        # if a and b can be merged into one range, we say a == b
+        #
+        # Different from ValueRange: adjacent Range-s are equal,
+        # because they can be merged into one.
+
+        if cmp_boundary(self[0], b[1]) > 0:
+            return 1
+
+        if cmp_boundary(b[0], self[1]) > 0:
+            return -1
+
+        # incomparable: overlapping or adjacent ranges
+        return 0
 
 
 class IntIncRange(Range):
@@ -136,10 +193,10 @@ class IntIncRange(Range):
         return (None not in (b[0], self[1])
                 and self[1] + 1 == b[0])
 
-    def has(self, val):
-        return (cmp_val(self[0], val, none_cmp_finite=-1) <= 0
-                and cmp_val(val, self[1], none_cmp_finite=1) <= 0
-                and type(val) in int_types)
+    def has(self, pos):
+        return (cmp_val(self[0], pos, none_cmp_finite=-1) <= 0
+                and cmp_val(pos, self[1], none_cmp_finite=1) <= 0
+                and type(pos) in int_types)
 
     def length(self):
         if None in self:
@@ -154,9 +211,9 @@ class IntIncRange(Range):
         return self[0] - 1
 
 
-class RangeSet(list):
+class RangeDict(list):
 
-    default_range_clz = Range
+    default_range_clz = ValueRange
 
     def __init__(self, iterable=None, range_clz=None):
 
@@ -165,8 +222,8 @@ class RangeSet(list):
 
         self.range_clz = range_clz or self.default_range_clz
 
-        super(RangeSet, self).__init__([self.range_clz(x[0], x[1])
-                                        for x in iterable])
+        super(RangeDict, self).__init__([self.range_clz(*x)
+                                         for x in iterable])
 
         for i in range(0, len(self) - 1):
             if self[i].cmp(self[i + 1]) != -1:
@@ -177,9 +234,138 @@ class RangeSet(list):
                     ripp=self[i + 1],
                 ))
 
+    def add(self, rng, val=None):
+
+        rng = _to_range(self.range_clz, list(rng) + [val])
+
+        i = bisect_left(self, rng)
+
+        while i < len(self):
+
+            if rng.cmp(self[i]) == 0:
+
+                l, r = substract_range(self[i], rng)
+                if l is None:
+                    if r is None:
+                        self.pop(i)
+                    else:
+                        self[i] = r
+                        i += 1
+                else:
+                    if r is None:
+                        self[i] = l
+                        i += 1
+                    else:
+                        self.pop(i)
+                        self.insert(i, r)
+                        self.insert(i, l)
+                        i += 2
+            else:
+                break
+
+        if rng[0] is None:
+            self.insert(0, rng)
+        else:
+            for i in range(len(self)):
+                if self[i].cmp_left(rng[0]) > 0:
+                    self.insert(i, rng)
+                    break
+            else:
+                self.append(rng)
+
+        self.normalize()
+
+    def get(self, pos):
+        rng = [pos, None]
+        i = bisect_left(self, rng)
+
+        if i == len(self) or not self[i].has(pos):
+            raise KeyError('not in range: ' + repr(pos))
+
+        return self[i].val()
+
+    def get_min(self, is_lt=None):
+
+        if len(self) == 0:
+            raise ValueError("range dict is empty")
+
+        if is_lt is None:
+            is_lt = lambda a, b: a < b
+
+        min_val_idx = 0
+        for i in range(1, len(self)):
+            if is_lt(self[i].val(), self[min_val_idx].val()):
+                min_val_idx = i
+
+        min_val_rng = self[min_val_idx]
+
+        return min_val_idx, min_val_rng, min_val_rng.val()
+
+    def has(self, pos):
+        rng = [pos, None]
+        i = bisect_left(self, rng)
+
+        if i == len(self):
+            return False
+
+        return self[i].has(pos)
+
+    def length(self):
+        rst = 0
+        for rng in self:
+            rst += rng.length()
+
+        return rst
+
+    def normalize(self):
+
+        i = 0
+        while i < len(self) - 1:
+            curr = self[i]
+            nxt = self[i+1]
+
+            if not curr.is_adjacent(nxt):
+                i += 1
+                continue
+
+            # compare value if there is
+            if curr[2:] == nxt[2:]:
+                o = [curr[0], nxt[1]] + curr[2:]
+                self[i] = self.range_clz(*o)
+                self.pop(i+1)
+            else:
+                i += 1
+                continue
+
+    def find_overlapped(self, rng):
+
+        rng = list(rng)
+        rst = []
+
+        i = bisect_left(self, rng)
+        while i < len(self):
+
+            if self[i].cmp(rng) == 0:
+
+                if self[i].intersect(rng) is not None:
+                    rst.append(self.range_clz(*self[i]))
+                else:
+                    # adjacent ranges
+                    pass
+                i += 1
+            else:
+                break
+
+        return self.__class__(rst)
+
+
+class RangeSet(RangeDict):
+
+    default_range_clz = Range
+
     def add(self, rng):
 
-        rng = _to_range(rng)
+        rng = _to_range(self.range_clz, list(rng))
 
         i = bisect_left(self, rng)
 
@@ -191,22 +377,6 @@ class RangeSet(list):
                 break
 
         self.insert(i, rng)
-
-    def has(self, val):
-        rng = Range(val, val)
-        i = bisect_left(self, rng)
-
-        if i == len(self):
-            return False
-
-        return self[i].has(val)
-
-    def length(self):
-        rst = 0
-        for rng in self:
-            rst += rng.length()
-
-        return rst
 
 
 class IntIncRangeSet(RangeSet):
@@ -242,7 +412,7 @@ def _union(a, b):
         elif j == len(b):
             a_ge_b = False
         else:
-            a_ge_b = a[i].cmp_left(b[j]) >= 0
+            a_ge_b = a[i].cmp_left(b[j][0]) >= 0
 
         if a_ge_b:
             nxt = b[j]
@@ -273,10 +443,10 @@ def substract(a, *bs):
 def _substract(a, b):
 
     if len(a) == 0:
-        return RangeSet([], range_clz=b.range_clz)
+        return a.__class__([], range_clz=a.range_clz)
 
     if len(b) == 0:
-        return RangeSet(a, range_clz=b.range_clz)
+        return a.__class__(a, range_clz=a.range_clz)
 
     rst = []
 
@@ -302,7 +472,7 @@ def _substract(a, b):
         if sb is not None:
             rst.append(sb)
 
-    return RangeSet(rst, range_clz=b.range_clz)
+    return a.__class__(rst, range_clz=a.range_clz)
 
 
 def intersect(a, b):
@@ -314,17 +484,14 @@ def assert_type_valid(typ):
         raise TypeError('{typ} is not comparable'.format(typ=typ))
 
 
-def _to_range(rng):
+def _to_range(range_clz, rng):
 
-    if not isinstance(rng, (list, tuple, Range)):
-        raise TypeError('invalid range {rng} of type {typ}'.format(
-            rng=rng, typ=type(rng)))
-
-    if len(rng) != 2:
-        raise ValueError('range length is not 2 but {l}: {rng}'.format(
+    # rangeset is 2 element iterable, rangedict is 3 element iterable
+    if len(rng) < 2:
+        raise ValueError('range length is at least 2 but {l}: {rng}'.format(
             l=len(rng), rng=rng))
 
-    return Range(rng[0], rng[1])
+    return range_clz(*rng)
 
 
 def cmp_boundary(l, r):
@@ -390,18 +557,25 @@ def union_range(a, b):
 def substract_range(a, b):
 
     if a.cmp(b) > 0:
-        return [None, a.dup()]
+        # keep value for ValueRange
+        return [None,
+                a.dup() + a[2:]]
 
     if a.cmp(b) < 0:
-        return [a.dup(), None]
+        # keep value for ValueRange
+        return [a.dup() + a[2:],
+                None]
 
+    # keep value for ValueRange
     rst = [None, None]
 
-    if a.cmp_left(b) < 0:
-        rst[0] = a.__class__(a[0], b.prev_right())
+    if a.cmp_left(b[0]) < 0:
+        o = [a[0], b.prev_right()] + a[2:]
+        rst[0] = a.__class__(*o)
 
-    if b.cmp_right(a) < 0:
-        rst[1] = a.__class__(b.next_left(), a[1])
+    if b.cmp_right(a[1]) < 0:
+        o = [b.next_left(), a[1]] + a[2:]
+        rst[1] = a.__class__(*o)
 
     return rst
 

@@ -176,6 +176,8 @@ class ZKLock(object):
                 except NoNodeError as e:
                     logger.info(repr(e) + ' while delete lock: ' + str(self))
 
+                self.lock_holder = None
+
                 return True, holder, zstat.version
             else:
                 return False, holder, zstat.version
@@ -197,6 +199,8 @@ class ZKLock(object):
                     self.zkclient.delete(self.lock_path)
                 except NoNodeError as e:
                     logger.info(repr(e) + ' while delete lock: ' + str(self))
+
+                self.lock_holder = None
 
                 logger.info('RELEASED: {s}'.format(s=str(self)))
             else:
@@ -267,7 +271,7 @@ class ZKLock(object):
                 self.maybe_available.clear()
 
         except NoNodeError as e:
-            # create failed but when getting  it, it has been deleted
+            # create failed but when getting it, it has been deleted
             logger.info(repr(e) + ' while get lock: {s}'.format(s=str(self)))
             with self.mutex:
                 self.lock_holder = None

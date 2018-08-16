@@ -12,9 +12,8 @@
   - [For tx killed in phase 0, 1, 2, 3](#for-tx-killed-in-phase-0-1-2-3)
     - [Condition:](#condition)
     - [Solution: Abort](#solution-abort)
-  - [For tx killed in phase 4, 5, 6, 7, 8, 9](#for-tx-killed-in-phase-4-5-6-7-8-9)
+  - [For tx killed in phase 4, 5, 6](#for-tx-killed-in-phase-4-5-6)
     - [Condition:](#condition-1)
-    - [Solution: re-apply journal and unlock](#solution-re-apply-journal-and-unlock)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
@@ -53,22 +52,39 @@ Because the locks might be lost.
 -   Check if any record has a value with newer txid than this txid,
     to ensure no lower txid will be applied after a higher txid applied.
 
--   Write all modifications into `journal`:
+-   Commit:
+    -   Write all modifications into `journal`:
+    -   Apply all modifications.
+    -   Unlock all locked records.
 
--   Apply this journal.
+    These 3 steps are done atomically in a `kazoo.Transaction`.
 
--   Unlock all locked records.
+    > This changed 2018-06.
+    > Using a atomic update is much easier to implement.
+    > But it does not support cross-zk-cluster tx(E.g. records and journals are in two zk cluster).
 
--   Update `<cluster>/tx/txidset`, mark this journal(tx) has
+-   Update `<cluster>/tx/journal_id_set`, mark this journal has
     been applied and can be removed from `journal` dir safely.
+
+    If there are too many txid in COMMITTED, old txid are moved to PURGED.
+
+    By default it keeps 1024 latest txid in COMMITTED.
 
 
 ## Journal format
 
 A journal contains all record modifications belonging to a single transaction.
 
-The journal node name is the corresponding txid: `00000000001` in
-`<cluster>/tx/journal/00000000001`.
+We use a sequence node to save journal.
+
+```
+# kazootx.create('xx/', '', sequence=True) => xx0000000000
+# kazootx.create('xx/a', '', sequence=True) => xx/a0000000000
+# so we provide a str "journal_id"
+<cluster>/tx/journal/journal_id00000000000
+<cluster>/tx/journal/journal_id00000000001
+...
+```
 
 Data format:
 
@@ -86,34 +102,34 @@ A tx would update one or more records.
 A record is a zk node in user-defined record base dir, such as
 `<cluster>/record/meta/server/<server_id>`.
 
-Value of a record is a json(or yaml) list, which contains one or more `(txid, value)`
-pairs(empty list is illegal!).
-
-`txid` is the txid in which a value is applied, value is any json data.
+Record is a `list`, each element is a json(or yaml),
+(empty list is illegal!).
 
 Record format:
 
-```yaml
-- [1, {...}]
-- [2, {...}]
-...
+```
+[
+    <value1>,
+    <value2>,
+    ...
+]
 ```
 
-> By default a record value keeps the last 16 txid
+> By default a record keeps the last 16 elements.
 
 
 ## Transaction journal and record example
 
 ```
-/<cluster>/tx/journal/0000000001      # content: {"meta/server/<server_id>": {...}}
-/<cluster>/tx/journal/0000000002      # content: {"meta/dirve/<drive_id>": {...}}
+/<cluster>/tx/journal/journal_id0000000000      # content: {"meta/server/<server_id>": {...}}
+/<cluster>/tx/journal/journal_id0000000001      # content: {"meta/dirve/<drive_id>": {...}}
 /<cluster>/record/meta/server/<server_id>
 /<cluster>/record/meta/drive/<drive_id>
 ```
 
-From above, the journal `0000000001` will be applied to
+From above, the journal `journal_id0000000000` will be applied to
 `/<cluster>/record/meta/server/<server_id>`,
-and `0000000002` will be applied to
+and `journal_id0000000001` will be applied to
 `/<cluster>/record/meta/drive/<drive_id>`,
 
 
@@ -130,7 +146,7 @@ Normally tx resources includes:
 
     It is a ephemeral node in zk.
 
--   key-locks: for each record involved in a tx there is a corresponding lock 
+-   key-locks: for each record involved in a tx there is a corresponding lock
     to protect it.
 
     Each key-lock is a normal node in zk(not ephemeral).
@@ -138,78 +154,49 @@ Normally tx resources includes:
 -   journal: is a zk node that stores all modifications of a tx.
 
     Journal write is atomic.
-    And the zk-node of a journal is named with txid.
+    And the zk-node of a journal is created with sequence.
 
 -   keys: records.
 
     Each record is identified by a key.
     Data of a record is stored in a zk-node.
 
--   committed-flag: stores tx-id status: COMMITTED, ABORTED or
-    PURGED.
+-   committed-flag: stores journal status: COMMITTED or PURGED.
 
-    In our implementation all tx status are stored together in one zk-node:
-    `txidset`.
+    In our implementation all journal status are stored together in one zk-node:
+    `journal_id_set`.
 
-    `txidset` is a dict of 3 `rangeset` for COMMITTED, ABORTED and PURGED:
+    `journal_id_set` is a dict of 2 `rangeset` for COMMITTED and PURGED:
 
     ```yaml
-    COMMITTED: [[1, 2], [4, 5]]
-    ABORTED:   [[2, 4]]
-    PURGED:    [[1, 3]]
+    COMMITTED: [[0, 4]]
+    PURGED:    [[0, 1]]
     ```
 
     -   COMMITTED:
-        -   If a tx completely committed, its txid is add to `txidset["COMMITTED"]`.
-        -   If a tx aborted(for any reason) **AFTER** journal was written, there is a
-            chance another tx detected this dead tx and re-do it.
-            In this case, eventually the dead tx will be committed, and will be
-            added into `txidset["COMMITTED"]`.
-
-    -   ABORTED:
-        -   If a user explicitly aborts a tx(by calling `tx.abort()`), the txid
-            is added into `txidset["ABORTED"]`.
-        -   If a tx aborted(for any reason) **BEFORE** journal was written,
-            another tx will find this dead tx by acquiring a key-lock that the
-            dead tx had been held.
-            In this case, the other tx will add the dead txid into `txidset["ABORTED"]`.
+        If a tx completely committed, its journal id is add to `journal_id["COMMITTED"]`.
 
     -   PURGED:
-        -   In order to recycle storage space in zk, there is a background
-            process cleans up journal. If a journal is removed, its txid is
-            added into `txidset["PURGED"]`.
-
-    **ABORTED txid set and COMMITTED txid set has no common element**:
-    A tx is either COMMITTED or ABORTED.
-
-    > It is possible a dead txid not in either of COMMITTED or ABORTED, when no
-    > one has discovered this tx was dead(another tx will find a dead tx when
-    > trying to acquire a key-lock which is held by dead tx, and there is a
-    > background process periodically looks up for dead tx).
-
-    A txid that is added into `txidset["PURGED"]` will not be removed from
-    ABORTED or COMMITTED(not necessary).
-
-    Thus all journals those are current available in zk are:
-    `txidset["COMMITTED"] - txidset["PURGED"]`.
+        If a journal has been deleted, the journal id is add to `journal_id["PURGED"]`
 
 
 # A typical transaction running phases
 
+> Changes: journal-write, record-apply and unlock now are done in a single zk
+> request atomically.
+
 ```
-|     |  action \ resource | tx-lock | 3 key-locks | journal | 3 keys | committed-flag |
-| :-- | :--                | :--     | :--         | :--     | :--    | :--            |
-| 0   | tx_begin()         | √       |             |         |        |                |
-| 1   | lock_get()         | √       | √           |         |        |                |
-| 2   | lock_get()         | √       | √√          |         |        |                |
-| 3   | lock_get()         | √       | √√√         |         |        |                |
-| 4   | write_journal()    | √       | √√√         | √       |        |                |
-| 5   | apply(             | √       | √√√         | √       | √      |                |
-| 6   | .....)             | √       | √√√         | √       | √√√    |                |
-| 7   | unlock_key(        | √       |  √√         | √       | √√√    |                |
-| 8   | ..........)        | √       |             | √       | √√√    |                |
-| 9   | add_txidset()      | √       |             | √       | √√√    | √              |
-| a   | unlock_tx()        |         |             | √       | √√√    | √              |
+|     |  action \ resource      | tx-lock | 3 key-locks | journal | 3 keys | committed-flag |
+| :-- | :--                     | :--     | :--         | :--     | :--    | :--            |
+| 0   | tx_begin()              | √       |             |         |        |                |
+| 1   | lock_get()              | √       | √           |         |        |                |
+| 2   | lock_get()              | √       | √√          |         |        |                |
+| 3   | lock_get()              | √       | √√√         |         |        |                |
+| 4   | commit()                | √       |             | √       | √√√    |                |
+|     |    write_journal()      |         |             |         |        |                |
+|     |    apply()              |         |             |         |        |                |
+|     |    unlock_key()         |         |             |         |        |                |
+| 5   | add_to_journal_id_set() |         |             | √       | √√√    | √              |
 ```
 
 A tx may be killed in any phase, by any reason.
@@ -227,14 +214,14 @@ automatically(key locks are not ephemeral zk node)**.
 A redo process first re-acquire the tx-lock(in order to ensure no other process
 was dealing with this tx), then does the following phase:
 
-## For tx killed in phase 0, 1, 2, 3
+## For tx killed in phase 0, 1, 2, 3, 4
 
 Key locks are partially or completely held.
 
 ### Condition:
 
 If we found there is **NOT** a journal written, we can be sure that the dead tx
-is in phase 0, 1, 2, 3.
+is in phase 0, 1, 2, 3, 4.
 
 
 ### Solution: Abort
@@ -249,38 +236,14 @@ nothing should be applied.
 > It is possible that a key-lock belonging to a dead tx stays locked for a very
 > long time until another tx tries to lock it.
 
-## For tx killed in phase 4, 5, 6, 7, 8, 9
+## For tx killed in phase 5
 
-Key locks are all held, and may be partially unlocked.
-And changes are partially or fully applied to key records.
-
+Failed to add journal id to journal id set.
 
 ### Condition:
 
-If we found a journal for this tx
+The journal has been written.
 
+### Solution: Wait
 
-### Solution: re-apply journal and unlock
-
--   We apply all changes stored in this journal.
-
-    **Here we must guarantee that re-applying a change has no effect
-    on a key record**.
-
-    This is done in the storage layer.
-
--   Try to release all key locks:
-
-    -   Try to lock it.
-
-    -   If a lock is acquired, just release it.
-        **Because a same tx is able to acquire a lock more than one times.**
-
-    -   If a lock is held by others, just skip.
-
-        This means this record has already been unlocked previous and has been locked by other tx.
-
-    This way we release all the key-locks held by a previous dead tx, and leave
-    locks held by others intact.
-
--   Update the `txidset` for this tx, to mark it as COMMITTED.
+When add next journal id to journal id set, the lost journal id will be added too.

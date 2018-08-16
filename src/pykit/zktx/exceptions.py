@@ -12,15 +12,19 @@ class Aborted(TXError):
     pass
 
 
+class NotLocked(Aborted):
+    pass
+
+
+class UnlockNotAllowed(Aborted):
+    pass
+
+
 class RetriableError(TXError):
     pass
 
 
 class UserAborted(Aborted):
-    pass
-
-
-class HigherTXApplied(Aborted, RetriableError):
     pass
 
 
@@ -33,4 +37,8 @@ class TXTimeout(Aborted):
 
 
 class ConnectionLoss(TXError, kazoo.exceptions.ConnectionLoss):
+    pass
+
+
+class CommitError(TXError):
     pass

@@ -72,11 +72,11 @@ class TestZKLock(unittest.TestCase):
                 "ZOO_SERVERS": "server.1=0.0.0.0:2888:3888",
             },
             port_bindings={
-                2181: 2181,
+                2181: 21811,
             }
         )
 
-        self.zk = KazooClient(hosts='127.0.0.1:2181')
+        self.zk = KazooClient(hosts='127.0.0.1:21811')
         self.zk.start()
         scheme, name, passw = zk_test_auth
         self.zk.add_auth(scheme, name + ':' + passw)
@@ -111,7 +111,7 @@ class TestZKLock(unittest.TestCase):
 
     def _loop_acquire(self, n, ident):
 
-        zk = KazooClient(hosts='127.0.0.1:2181')
+        zk = KazooClient(hosts='127.0.0.1:21811')
         zk.start()
         scheme, name, passw = zk_test_auth
         zk.add_auth(scheme, name + ':' + passw)
@@ -325,6 +325,38 @@ class TestZKLock(unittest.TestCase):
             time.sleep(0.1)
             self.assertFalse(sess['acquired'])
 
+    def test_node_change_after_released(self):
+
+        sess = {'acquired': True}
+
+        def on_lost():
+            sess['acquired'] = False
+
+        l = zkutil.ZKLock('foo_name',
+                          zkclient=self.zk,
+                          on_lost=on_lost)
+
+        with l:
+            sess['acquired'] = True
+
+        time.sleep(0.1)
+        self.assertTrue(sess['acquired'])
+
+    def test_is_locked(self):
+
+        l = zkutil.ZKLock('foo_name', zkclient=self.zk)
+
+        with l:
+            pass
+
+        self.assertFalse(l.is_locked())
+
+        l = zkutil.ZKLock('foo_name', zkclient=self.zk)
+        l.acquire()
+        self.assertTrue(l.is_locked())
+        l.try_release()
+        self.assertFalse(l.is_locked())
+
     def test_conn_lost_when_blocking_acquiring(self):
 
         l2 = zkutil.ZKLock('foo_name', on_lost=lambda: True)
@@ -409,25 +441,25 @@ class TestZKLock(unittest.TestCase):
 
         l = zkutil.ZKLock('foo_name',
                           zkconf=dict(
-                              hosts='127.0.0.1:2181',
+                              hosts='127.0.0.1:21811',
                           ),
                           on_lost=lambda: True)
 
         with l:
-            self.assertEqual('127.0.0.1:2181', l._hosts)
+            self.assertEqual('127.0.0.1:21811', l._hosts)
 
     def test_specify_identifier(self):
 
         a = zkutil.ZKLock('foo_name',
                           zkconf=dict(
-                              hosts='127.0.0.1:2181',
+                              hosts='127.0.0.1:21811',
                           ),
                           identifier='faked',
                           on_lost=lambda: True)
 
         b = zkutil.ZKLock('foo_name',
                           zkconf=dict(
-                              hosts='127.0.0.1:2181',
+                              hosts='127.0.0.1:21811',
                           ),
                           identifier='faked',
                           on_lost=lambda: True)
@@ -445,7 +477,7 @@ class TestZKLock(unittest.TestCase):
 
         l = zkutil.ZKLock('foo_name',
                           zkconf=dict(
-                              hosts='127.0.0.1:2181',
+                              hosts='127.0.0.1:21811',
                           ),
                           on_lost=lambda: True)
 

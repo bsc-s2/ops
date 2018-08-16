@@ -1,64 +1,15 @@
 #!/usr/bin/env python2
 # coding: utf-8
 
-from collections import defaultdict
-from collections import namedtuple
-import psutil
 import re
 import socket
-import uuid
+from collections import defaultdict
+
+import psutil
 
 from pykit import fsutil
 from pykit import net
 from pykit import strutil
-
-
-class DriveIDError(Exception):
-    pass
-
-
-class ServerID(namedtuple('_ServerID', '')):
-
-    @classmethod
-    def validate(cls, server_id):
-        if not isinstance(server_id, basestring):
-            return False
-
-        return re.match("^[0-9a-f]{12}$", server_id) is not None
-
-    def __str__(self):
-        node = '%032x' % uuid.getnode()
-        return node[-12:]
-
-
-class DriveID(namedtuple('_DriveID', 'server_id mount_point_index')):
-
-    @classmethod
-    def validate(cls, drive_id):
-        if not isinstance(drive_id, basestring):
-            return False
-
-        if len(drive_id) != 16:
-            return False
-
-        server_id = drive_id[:12]
-        padding = drive_id[12:13]
-        mp_idx = drive_id[13:]
-
-        return (ServerID.validate(server_id)
-                and padding == '0'
-                and re.match("^[0-9]{3}$", mp_idx) is not None)
-
-    @classmethod
-    def parse(cls, drive_id):
-        if not DriveID.validate(drive_id):
-            raise DriveIDError('invalid drive id: {d}'.format(d=drive_id))
-
-        return DriveID(drive_id[:12], int(drive_id[13:]))
-
-    def __str__(self):
-        return '{sid}0{idx:0>3}'.format(sid=self.server_id,
-                                        idx=self.mount_point_index % 1000)
 
 
 def _make_mountpoints_info():
@@ -90,10 +41,10 @@ def _get_allocated_drive(allocated_drive_pre, mountpoints):
     return rst
 
 
-def make_serverrec(idc, idc_type, roles, allocated_drive_pre, **argkv):
+def make_serverrec(server_id, idc, idc_type, roles, allocated_drive_pre, **argkv):
     serverrec = {}
 
-    ips = net.get_host_ip4()
+    ips = net.get_host_ip4(exclude_prefix="docker")
     inn_ips = net.choose_inn(ips)
     pub_ips = net.choose_pub(ips)
 
@@ -105,7 +56,7 @@ def make_serverrec(idc, idc_type, roles, allocated_drive_pre, **argkv):
     if hasattr(psutil, 'cpu_freq'):
         cpu_info['frequency'] = psutil.cpu_freq().max
 
-    serverrec['server_id'] = str(ServerID())
+    serverrec['server_id'] = server_id
     serverrec['pub_ips'] = pub_ips
     serverrec['inn_ips'] = inn_ips
     serverrec['hostname'] = socket.gethostname()
@@ -140,6 +91,9 @@ def get_serverrec_str(serverrec):
 
 
 def validate_idc(idc):
+
+    # deprecated, use IDCID(idc)
+
     if not isinstance(idc, basestring):
         return False
 

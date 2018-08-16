@@ -11,12 +11,14 @@
 - [Exceptions](#exceptions)
   - [TXError](#txerror)
   - [Aborted](#aborted)
+  - [NotLocked](#notlocked)
+  - [UnlockNotAllowed](#unlocknotallowed)
   - [RetriableError](#retriableerror)
-    - [`HigherTXApplied(Aborted, RetriableError)`](#highertxappliedaborted-retriableerror)
     - [`Deadlock(Aborted, RetriableError)`](#deadlockaborted-retriableerror)
   - [UserAborted](#useraborted)
   - [TXTimeout](#txtimeout)
   - [ConnectionLoss](#connectionloss)
+  - [CommitError](#commiterror)
 - [Accessor classes](#accessor-classes)
   - [zktx.KeyValue](#zktxkeyvalue)
   - [zktx.Value](#zktxvalue)
@@ -32,21 +34,24 @@
       - [Storage.try_release_key](#storagetry_release_key)
     - [Storage helper methods](#storage-helper-methods)
   - [zktx.StorageHelper](#zktxstoragehelper)
-    - [StorageHelper.apply_record](#storagehelperapply_record)
-    - [StorageHelper.add_to_txidset](#storagehelperadd_to_txidset)
+    - [StorageHelper.add_to_journal_id_set](#storagehelperadd_to_journal_id_set)
   - [zktx.ZKStorage](#zktxzkstorage)
   - [zktx.RedisStorage](#zktxredisstorage)
     - [zktx.RedisStorage.apply_jour](#zktxredisstorageapply_jour)
     - [zktx.RedisStorage.apply_record](#zktxredisstorageapply_record)
-    - [zktx.RedisStorage.add_to_txidset](#zktxredisstorageadd_to_txidset)
-    - [zktx.RedisStorage.set_txidset](#zktxredisstorageset_txidset)
+    - [zktx.RedisStorage.add_to_journal_id_set](#zktxredisstorageadd_to_journal_id_set)
+    - [zktx.RedisStorage.set_journal_id_set](#zktxredisstorageset_journal_id_set)
 - [Transaction classes](#transaction-classes)
   - [zktx.TXRecord](#zktxtxrecord)
   - [zktx.ZKTransaction](#zktxzktransaction)
     - [ZKTransaction.lock_get](#zktransactionlock_get)
+    - [ZKTransaction.unlock](#zktransactionunlock)
     - [ZKTransaction.set](#zktransactionset)
+    - [ZKTransaction.get_state](#zktransactionget_state)
+    - [ZKTransaction.set_state](#zktransactionset_state)
     - [ZKTransaction.commit](#zktransactioncommit)
     - [ZKTransaction.abort](#zktransactionabort)
+  - [zktx.list_recoverable](#zktxlist_recoverable)
   - [zktx.run_tx](#zktxrun_tx)
 - [Slave class](#slave-class)
   - [zktx.Slave](#zktxslave)
@@ -134,34 +139,34 @@ Super class of all zktx exceptions
 It should **NOT** be used directly.
 
 
+##  NotLocked
+
+`NotLocked` is raised if a user is trying to unlock a key which is not held by
+current `tx`.
+
+
+##  UnlockNotAllowed
+
+`UnlockNotAllowed` is raised if a user is trying to unlock a changed record(with `tx.set()`).
+
+```python
+with ZKTransaction(zkhost) as tx:
+
+    foo = tx.lock_get('foo')
+    tx.unlock(foo) # good
+
+    foo = tx.lock_get('foo')
+    tx.set(foo)
+    tx.unlock(foo) # UnlockNotAllowed
+```
+
+
 ##  RetriableError
 
 It is a super class of all retrieable errors.
 
 Sub classes are:
 
-### `HigherTXApplied(Aborted, RetriableError)`
-
-It is raised if a higher txid than current tx has been seen when reading a `record`.
-
-Because tx must be applied in order, if a higher txid is seen user should
-abort current tx and retry(with a new higher txid).
-
-E.g.:
-
-```
-| tx-1                       | tx-2                        |
-| :---                       | :---                        |
-| created                    | created                     |
-|                            | lock('foo') OK              |
-| lock('foo') blocked        |                             |
-|                            | get('foo') latest-txid = -1 |
-|                            | set('foo', 10)              |
-|                            | commit()                    |
-| lock('foo') OK             |                             |
-| get('foo') latest-txid = 2 |                             |
-| raise HigherTXApplied()    |                             |
-```
 
 ### `Deadlock(Aborted, RetriableError)`
 
@@ -187,6 +192,12 @@ It is raised if tx fails to commit before specified running time(`timeout`).
 ##  ConnectionLoss
 
 It is raised if tx loses connection to zk.
+
+**A program should always catch this error**.
+
+##  CommitError
+
+It is raised if failed to call `tx.commit()`.
 
 **A program should always catch this error**.
 
@@ -346,12 +357,10 @@ a class that implements `Storage` must provides 3 accessors(`KeyValue` and `Valu
 -   `record`:
     is a `KeyValue` to get or set a user-data record.
 
-    A record value is a `list` of `[txid, value]`:
+    A record value is a `list` of `value`:
 
     ```python
-    [[1, "foo"],
-     [2, "bar"],
-    ]
+    ["foo", "bar"]
     ```
 
 -   `journal`:
@@ -360,28 +369,18 @@ a class that implements `Storage` must provides 3 accessors(`KeyValue` and `Valu
     Journal value is not define on storage layer.
     A TX engine defines the value format itself.
 
--   `txidset`:
-    is a `Value`.
-    It is a single value accessor to get or set transaction id set.
-
-    Value of `txidset` is a `dict` of 3 `RangeSet`(see module `rangeset`):
+-   `journal_id_set`:
+    It is a single value accessor to get or set journal id set.
+    It is a `dict` of 2 `RangeSet`, (see module `rangeset`).
 
     ```python
     {
         "COMMITTED": RangeSet(),
-        "ABORTED": RangeSet(),
         "PURGED": RangeSet(),
     }
     ```
-
-    -   `COMMITTED` contains committed txid.
-
-    -   `ABORTED` contains aborted txid.
-        Abort means a tx is killed before writing a `journal`.
-
-    -   `PURGED` contains txid whose journal has been removed.
-
-    > `COMMITTED`, `ABORTED` and `PURGED` has no intersection.
+    -   `COMMITTED` contains committed journal id.
+    -   `PURGED` contains journal id whose journal has been deleted.
 
 
 ### Storage methods
@@ -442,49 +441,23 @@ Since underlying accessors has already been provided, these 3 methods are
 implementation unrelated.
 
 
-###  StorageHelper.apply_record
+###  StorageHelper.add_to_journal_id_set
 
 **syntax**:
-`StorageHelper.apply_record(txid, key, value)`
+`StorageHelper.add_to_journal_id_set(status, journal_id)`
 
-This method applies an update to underlying storage.
+It records a journal id as one of the possible status: `COMMITTED` or `PURGED`.
 
-It requires 2 accessor methods: `self.record.get(key)`
-and `self.record.set(key, value, version=None)`.
-
-**arguments**:
-
--   `txid`:
-    transaction id.
-
--   `key`:
-    record key.
-
--   `value`:
-    record value.
-
-**return**:
-a `bool` indicates if change has been made to underlying storage.
-Normal it is `False` if a higher txid has already been applied.
-
-
-###  StorageHelper.add_to_txidset
-
-**syntax**:
-`StorageHelper.add_to_txidset(status, txid)`
-
-It records a txid as one of the possible status: COMMITTED, ABORTED or PURGED.
-
-It requires 2 accessor methods: `self.txidset.get()`
-and `self.txidset.set(value, version=None)`.
+It requires 2 accessor methods: `self.journal_id_set.get()`
+and `self.journal_id_set.set(value, version=None)`.
 
 **arguments**:
 
 -   `status`:
-    specifies tx status
+    specifies journal status
 
--   `txid`:
-    transaction id.
+-   `journal_id`:
+    journal id.
 
 **return**:
 Nothing
@@ -507,7 +480,7 @@ stored in zk.
 ##  zktx.RedisStorage
 
 **syntax**:
-`zktx.RedisStorage(redis_cli, txidset_path)`
+`zktx.RedisStorage(redis_cli, journal_id_set_path)`
 
 It provide some functions to save data with redis.
 
@@ -516,8 +489,8 @@ It provide some functions to save data with redis.
 -   `redis_cli`:
     is a `redis.StrictRedis` instance.
 
--   `txidset_path`:
-    the path of txidset in redis.
+-   `journal_id_set_path`:
+    the path of journal id set in redis.
 
 
 ### zktx.RedisStorage.apply_jour
@@ -555,39 +528,36 @@ Set `val` to redis with `key`.
 nothing
 
 
-### zktx.RedisStorage.add_to_txidset
+### zktx.RedisStorage.add_to_journal_id_set
 
 **syntax**:
-`zktx.RedisStorage.add_to_txidset(status, txid)`:
+`zktx.RedisStorage.add_to_journal_id_set(status, journal_id)`:
 
-It records a txid as one of the possible status: COMMITTED, ABORTED or PURGED.
+It records a journal id as one of the possible status: `COMMITTED` or `PURGED`.
 
 **arguments**:
 
 -   `status`:
-    specifies tx status.
+    specifies journal status.
 
--   `txid`:
-    transaction id.
+-   `journal_id`:
+    journal id.
 
 **return**:
 nothing
 
 
-### zktx.RedisStorage.set_txidset
+### zktx.RedisStorage.set_journal_id_set
 
 **syntax**:
-`zktx.RedisStorage.set_txidset(status, txidset)`:
+`zktx.RedisStorage.set_journal_id_set(journal_id_set)`:
 
-It records a txidset as one of the possible status: COMMITTED, ABORTED or PURGED.
+It records a journal id set.
 
 **arguments**:
 
--   `status`:
-    specifies tx status.
-
--   `txid`:
-    transaction id set.
+-   `journal_id_set`:
+    journal id set.
 
 **return**:
 nothing
@@ -599,12 +569,25 @@ nothing
 ##  zktx.TXRecord
 
 **syntax**:
-`zktx.TXRecord(k, v, txid)`
+`zktx.TXRecord(k, v, version, values)`
 
-It is a simple wrapper class of key, value and the `txid` in which the value is
-updated.
+It is a simple wrapper class of a `record`.
 
 `ZKTransaction.lock_get()` returns a `TXRecord` instance.
+
+**arguments**:
+
+-   `k`:
+    the key of the record.
+
+-   `v`:
+    the latest value of the record.
+
+-   `version`:
+    the version of the zk node.
+
+-   `values`:
+    a `list`, it contains the history value of the record.
 
 
 ##  zktx.ZKTransaction
@@ -632,11 +615,15 @@ It is a transaction engine.
 
     If `timeout` exceeded, a `TXTimeout` error will be raised.
 
+-   `lock_timeout`:
+    specifies the time for every lock get.
+    If `timeout` exceeded, a `TXTimeout` error will be raised.
+
 
 ###  ZKTransaction.lock_get
 
 **syntax**:
-`ZKTransaction.lock_get(key)`
+`ZKTransaction.lock_get(key, blocking=True, latest=True, timeout=None)`
 
 Lock a record identified by `key` and retrieve the record and return.
 
@@ -652,8 +639,47 @@ But it always returns a copy of the first returned `TXRecord`.
 -   `key`:
     is the record key in string.
 
+-   `blocking`:
+    if `blocking` is `False`, it does not block if the key lock is held by other
+    tx.
+    Instead it returns `None` at once.
+
+-   `latest`:
+    if `latest` is `True`, it retrieves the latest `key` record that set before
+    in this transaction.
+    Otherwise, it retrieves the `key` record from zookeeper node.
+
+-   `timeout`:
+    specifies the total time for this lock get.
+    If `timeout` exceeded, a `TXTimeout` error will be raised.
+    If it is not specified or `None`, `ZKTransaction.lock_timeout` will be used to be `timeout`,
+    and if `ZKTransaction.lock_timeout` is also `None`, then use `ZKTransaction.timeout` to get
+    left time for this transaction to use as the `timeout`.
+
 **return**:
 a `TXRecord` instance.
+
+
+###  ZKTransaction.unlock
+
+**syntax**:
+`ZKTransaction.unlock(rec)`
+
+Unlock a record returned from `tx.lock_get()`
+
+-   Trying to unlock a record not locked by current tx raises `NotLocked`.
+-   Trying to unlock a changed record(`tx.set(rec)`) raises `UnlockNotAllowed`.
+
+If one of the above error raises, tx is still consistent.
+Thus `state` will not be removed.
+
+**arguments**:
+
+-   `rec`:
+    record
+
+**return**:
+Nothing
 
 
 ###  ZKTransaction.set
@@ -677,14 +703,85 @@ Calling `set(rec)` twice with a same record is OK and has no side effect.
 nothing.
 
 
+###  ZKTransaction.get_state
+
+**syntax**:
+`ZKTransaction.get_state()`
+
+Get saved transaction state.
+
+**Synopsis**:
+recoverable transaction:
+
+```python
+
+def tx_job(tx):
+
+    # load previous saved state
+    state = tx.get_state()
+
+    if state is None:
+        foo = tx.lock_get('foo')
+        foo.v += 1
+    else:
+        foo = tx.lock_get('foo')
+        foo.v = state['foo']
+
+    tx.set_state({'tx-func': 'job-1', 'foo': foo.v})
+
+with zktx.ZKTransaction(zkhost) as t1:
+    # start a tx but failed to commit
+    tx_job(tx)
+    raise
+
+for txid, state in zktx.list_recoverable(zkhost):
+
+    # recover dead tx I was previously in charge.
+    if state.get('tx-func') == 'job-1':
+        with zktx.ZKTransaction(zkhost, txid=txid) as t2:
+            tx_job(t2)
+            t2.commit()
+```
+
+
+**return**:
+the data saved with `ZKTransaction.set_state`
+
+
+###  ZKTransaction.set_state
+
+**syntax**:
+`ZKTransaction.set_state(data)`
+
+Save any valid json dumppable value as transaction state.
+
+**arguments**:
+
+-   `data`:
+     `str`, `dict`, `list`, `tuple` or `int`.
+
+**return**:
+Nothing.
+
+
 ###  ZKTransaction.commit
 
 **syntax**:
-`ZKTransaction.commit()`
+`ZKTransaction.commit(force=False)`
 
 Write all update to zk.
 
 It might raise errors: `TXTimeout`, `ConnectionLoss`.
+
+**arguments**
+
+-   `force`:
+
+    If `force` is `False`, if there is no modifications, zktx does not write a
+    journal, and zktx stores this tx as `PURGED`.
+
+    If `force` is `True`, zktx always write a journal, and zktx stores this tx
+    as `COMMITTED`.
 
 **return**:
 nothing.
@@ -701,10 +798,27 @@ Cancel a tx and write nothing to zk.
 nothing.
 
 
+##  zktx.list_recoverable
+
+**syntax**:
+`zktx.list_recoverable(zk)`
+
+List txid and corresponding tx state of all tx-s those are dead and has state
+saved.
+
+**arguments**:
+
+-   `zk`:
+    is same as `zk` in `ZKTransaction`.
+
+**return**:
+a generotor yields tuple of (`txid`, `state`).
+
+
 ##  zktx.run_tx
 
 **syntax**:
-`zktx.run_tx(zk, func, timeout=None, args=(), kwargs=None)`
+`zktx.run_tx(zk, func, txid=None, timeout=None, lock_timeout=None, args=(), kwargs=None)`
 
 Start a tx and run it.
 Tx operations are define by a callable: `func`.
@@ -712,11 +826,14 @@ Tx operations are define by a callable: `func`.
 `func` accepts at least one argument `tx`.
 More arguments specified by `args` and `kwargs` are also passed to `func`.
 
+Use a specified `txid` when recovering a tx from tx state.
+
 If a `RetriableError` is raised during tx running, `run()` will catch it
 and create a new tx and call `func` again,
 until tx commits or `timeout` exceeds.
 
 When using `run()`, `timeout` is the total time for all tx `run()` created.
+And `lock_timeout` is the time limit when get a lock in the transaction.
 
 **Synopsis**:
 
@@ -745,6 +862,11 @@ except (TXTimeout, ConnectionLoss) as e:
     specifies the total time for tx to run.
 
     If `timeout` exceeded, a `TXTimeout` error will be raised.
+
+-   `lock_timeout`:
+    specifies the time for every lock get.
+
+    If `lock_timeout` exceeded, a `TXTimeout` error will be raised.
 
 -   `args`:
     specifies additional positioned arguments.
@@ -775,7 +897,7 @@ Sync data from Zookeeper to the `storage`.
 
 -   `storage`:
     the instance that user specifies.
-    It must provide 4 methods(`apply_jour`, `apply_record`, `add_to_txidset`, `set_txidset`)
+    It must provide 4 methods(`apply_jour`, `apply_record`, `add_to_journal_id_set`, `set_journal_id_set`)
     like `zktx.RedisStorage`.
 
 
@@ -794,7 +916,7 @@ nothing.
 from pykit import zktx
 from pykit import zkutil
 
-storage = zktx.RedisStorage(redis_cli, 'txidset')
+storage = zktx.RedisStorage(redis_cli, 'journal_id_set')
 zke, _ = zkutil.kazoo_client_ext('127.0.0.1:2181')
 
 slave = zktx.Slave(zke, storage)

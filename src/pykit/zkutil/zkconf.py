@@ -19,20 +19,22 @@ class ZKConf(object):
                     alive/0000000001
                     journal/0000000001
                     state/0000000001
-                    txidset
+                    journal_id_set
                     txid_maker
+        <prefix>/seq/<key>
 
     alive:      Contains `ephemeral` node each of which represents a transaction.
                 Its modifications is used.
 
     journal:    Contains journal transaction modifications. Each of them is a complete transaction.
 
-    txidset: Last committed txid number.
+    journal_id_set: Committed and Purged journal id.
     """
 
     def __init__(self,
                  hosts=None,
                  tx_dir=None,
+                 seq_dir=None,
                  record_dir=None,
                  lock_dir=None,
                  node_id=None,
@@ -43,6 +45,7 @@ class ZKConf(object):
         self.conf = {
             'hosts':      hosts,
             'tx_dir':     tx_dir,
+            'seq_dir':    seq_dir,
             'record_dir': record_dir,
             'lock_dir':   lock_dir,
             'node_id':    node_id,
@@ -66,15 +69,19 @@ class ZKConf(object):
 
     def record(self, key=''): return ''.join([self.record_dir(), key])
 
+    def seq_dir(self): return self._get_config('seq_dir')
+
+    def seq(self, key=''): return ''.join([self.seq_dir(), key])
+
     def tx_dir(self): return self._get_config('tx_dir')
 
     def tx_alive(self, txid=''): return ''.join([self.tx_dir(), 'alive/', _dump_txid(txid)])
 
     def tx_state(self, txid=''): return ''.join([self.tx_dir(), 'state/', _dump_txid(txid)])
 
-    def journal(self, txid=''): return ''.join([self.tx_dir(), 'journal/', _dump_txid(txid)])
+    def journal(self, journal_id=''): return ''.join([self.tx_dir(), 'journal/', _dump_journal_id(journal_id)])
 
-    def txidset(self): return ''.join([self.tx_dir(), 'txidset'])
+    def journal_id_set(self): return ''.join([self.tx_dir(), 'journal_id_set'])
 
     def txid_maker(self): return ''.join([self.tx_dir(), 'txid_maker'])
 
@@ -159,6 +166,15 @@ def _dump_txid(txid):
         return '%010d' % txid
     else:
         raise TypeError('invalid type txid: ' + repr(txid))
+
+
+def _dump_journal_id(journal_id):
+    if isinstance(journal_id, (int, long)):
+        return 'journal_id%010d' % journal_id
+    elif isinstance(journal_id, str):
+        return journal_id
+    else:
+        raise TypeError('invalid type journal id: ' + repr(journal_id))
 
 
 def kazoo_client_ext(zk, json=True):
