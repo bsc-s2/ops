@@ -62,6 +62,27 @@ yum_pkg_util()
     echo wget
 }
 
+yum_pkg_dev()
+{
+    echo gcc
+    echo ctags-etags
+    echo perf
+    echo openssl-devel
+    echo libcurl-devel
+
+    echo perl-devel
+
+    echo file-devel # magic.h
+
+    echo uuid
+    echo libuuid
+    echo libuuid-devel
+
+    echo luarocks
+
+    echo gperftools-libs # tcmalloc
+}
+
 main()
 {
     info start init centos-7
@@ -70,6 +91,7 @@ main()
     yum_remove $(yum_pkg_unused) || die yum_remove
     yum update -y                || die yum update
     yum_install $(yum_pkg_util)  || die yum_install util
+    yum_install $(yum_pkg_dev)   || die yum_install dev
 }
 
 main "$@"
