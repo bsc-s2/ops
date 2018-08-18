@@ -6,7 +6,7 @@ main()
 
     yum_repo_add                       || die yum_repo_add
     yum_remove       $(yum_pkg_unused) || die yum_remove
-    yum update -y                      || die yum update
+    sudo yum update -y                 || die yum update
     yum_install      $(yum_pkg_util)   || die yum_install util
     yum_install      $(yum_pkg_dev)    || die yum_install dev
     pipconf_install                    || die pipconf_install
