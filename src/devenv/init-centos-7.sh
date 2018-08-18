@@ -55,7 +55,6 @@ yum_pkg_util()
     echo mercurial          # version control `hg`
     echo vim-enhanced
 
-    echo cloc               # line of code analysis
     echo lsof
     echo net-tools
     echo openssl
