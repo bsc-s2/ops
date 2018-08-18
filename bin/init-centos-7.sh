@@ -328,26 +328,9 @@ bashrc_install()
 alias rm='rm -i'
 alias cp='cp -i'
 alias mv='mv -i'
-export HISTFILESIZE=500000000
-export HISTSIZE=1000000
-export HISTTIMEFORMAT="%Y/%m/%d %H:%M:%S "
-export HISTORY_DIR=/var/log/command_history
-export HISTORY_FILE=${HISTORY_DIR}/`date '+%Y-%m-%d'`.log
 
 LANG="zh_CN.UTF-8"
 LC_ALL="zh_CN.UTF-8"
-
-export PROMPT_COMMAND='{ date "+%Y-%m-%d %T ##### $(who am i |awk "{print \$1\" \"\$2\" \"\$5}")  #### $(history 1 | { read x cmd; echo "$cmd"; })"; } >> $HISTORY_FILE'
-
-if [ ! -d $HISTORY_DIR ];then
-    mkdir -p $HISTORY_DIR
-fi
-
-if [ ! -f $HISTORY_FILE ];then
-    touch $HISTORY_FILE
-fi
-
-chmod a+w $HISTORY_FILE
 
 # Source global definitions
 if [ -f /etc/bashrc ]; then
