@@ -189,11 +189,29 @@ screenrc_install()
         return 0
     fi
 
+    # source is replace by Makefile
+
     {
     cat<<-END
 source screenrc
 END
     } >"$HOME/.screenrc"
+}
+
+tmuxconf_install()
+{
+    if [ -f "$HOME/.tmux.conf" ]; then
+        return 0
+    fi
+
+    # source is replace by Makefile
+
+    {
+    cat<<-END
+source tmux.conf
+END
+    } >"$HOME/.tmux.conf"
+
 }
 
 main()
@@ -209,6 +227,7 @@ main()
     pip2_install $(pip_pkg_all)   || die pip2_install all
     make_ssh_key                 || die make_ssh_key
     screenrc_install             || die screenrc_install
+    tmuxconf_install             || die tmuxconf_install
 }
 
 main "$@"
