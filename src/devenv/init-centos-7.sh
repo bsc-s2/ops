@@ -1,6 +1,24 @@
 #!/bin/sh
 
-source ../shlib.sh
+main()
+{
+    info start init centos-7 as a minimal dev env...
+
+    yum_repo_add                       || die yum_repo_add
+    yum_remove       $(yum_pkg_unused) || die yum_remove
+    yum update -y                      || die yum update
+    yum_install      $(yum_pkg_util)   || die yum_install util
+    yum_install      $(yum_pkg_dev)    || die yum_install dev
+    pipconf_install                    || die pipconf_install
+    pip2_install     $(pip_pkg_all)    || die pip2_install all
+    make_ssh_key                       || die make_ssh_key
+    screenrc_install                   || die screenrc_install
+    tmuxconf_install                   || die tmuxconf_install
+    bashrc_install                     || die bashrc_install
+    vimrc_install                      || die vimrc_install
+
+    ok Done init centos-7 as a minimal dev env
+}
 
 yum_repo_add()
 {
@@ -259,24 +277,6 @@ END
     # TODO init plugins
 }
 
-main()
-{
-    info start init centos-7 as a minimal dev env...
-
-    yum_repo_add                       || die yum_repo_add
-    yum_remove       $(yum_pkg_unused) || die yum_remove
-    yum update -y                      || die yum update
-    yum_install      $(yum_pkg_util)   || die yum_install util
-    yum_install      $(yum_pkg_dev)    || die yum_install dev
-    pipconf_install                    || die pipconf_install
-    pip2_install     $(pip_pkg_all)    || die pip2_install all
-    make_ssh_key                       || die make_ssh_key
-    screenrc_install                   || die screenrc_install
-    tmuxconf_install                   || die tmuxconf_install
-    bashrc_install                     || die bashrc_install
-    vimrc_install                      || die vimrc_install
-
-    ok Done init centos-7 as a minimal dev env
-}
+source ../shlib.sh
 
 main "$@"
