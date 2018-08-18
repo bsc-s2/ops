@@ -58,7 +58,6 @@ yum_pkg_util()
     echo lsof
     echo net-tools
     echo openssl
-    echo parallel
     echo psmisc             # killall
     echo tcpdump
     echo telnet
