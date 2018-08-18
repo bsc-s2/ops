@@ -174,6 +174,28 @@ pip_pkg_all()
     echo ici    # dictionary
 }
 
+make_ssh_key() {
+    info make_ssh_key \
+        && { [ -f "$HOME/.ssh/id_rsa" ] && info "exists" && return 0 || ``; } \
+        && mkdir -p ~/.ssh \
+        && ssh-keygen -f ~/.ssh/id_rsa -N "" \
+        && cat ~/.ssh/id_rsa.pub \
+        && info "Done make_ssh_key"
+}
+
+screenrc_install()
+{
+    if [ -f "$HOME/.screenrc" ]; then
+        return 0
+    fi
+
+    {
+    cat<<-END
+source screenrc
+END
+    } >"$HOME/.screenrc"
+}
+
 main()
 {
     info "start init centos-7"
@@ -185,6 +207,8 @@ main()
     yum_install $(yum_pkg_dev)   || die yum_install dev
     pipconf_install              || die pipconf_install
     pip2_install $(pip_pkg_all)   || die pip2_install all
+    make_ssh_key                 || die make_ssh_key
+    screenrc_install             || die screenrc_install
 }
 
 main "$@"

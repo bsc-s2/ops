@@ -1,0 +1,42 @@
+# usage: copy to ~/.screenrc
+
+# use Ctrl-e as escape key, by default it is Ctrl-a
+# escape ^e^e
+
+# change the hardstatus settings to give an window list at the bottom of the
+# screen, with the time and date and with the current window highlighted
+
+# statusline: [ drdrxpdeMacBook-Pro ][              0 bash  1- bash  (2*bash)              ][ 21/06 14:04 ]
+
+hardstatus alwayslastline
+hardstatus string '%{= kG} %{= kw}%?%-Lw%?%{r}(%{W}%n*%f%t%?(%u)%?%{r})%{w}%?%+Lw%?%?%= %d/%m %c'
+
+# 10k lines of scrollback buffer
+defscrollback 10000
+
+# <F8> switch to next window, <F7> to prev window
+bindkey -k k8 next
+bindkey -k k7 prev
+
+# To switch to previous or next window
+# alt-h
+# alt-l
+# \033 is <ESC>
+bindkey -t "\033h" prev
+bindkey -t "\033l" next
+
+# To move current window to left or right
+# alt-shift-h
+# alt-shift-l
+bindkey -t "\033H" exec sh -c 'screen -X msgwait 0; n=$(screen -Q number | grep -o "^[0-9]*"); let n=n-1; screen -X number "$n"; screen -X msgwait 1;'
+bindkey -t "\033L" exec sh -c 'screen -X msgwait 0; n=$(screen -Q number | grep -o "^[0-9]*"); let n=n+1; screen -X number "$n"; screen -X msgwait 1;'
+
+# ctrl-a ctrl-r to reload .screenrc
+# bind uses c-a, bindkey does not
+bind "^r" source ~/.screenrc
+
+# display error message for 1 second
+msgwait 1
+
+# turn off stupid startup message
+startup_message off
