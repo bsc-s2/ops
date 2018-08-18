@@ -8,7 +8,6 @@ yum_repo_add()
         -o /etc/yum.repos.d/mcepl-vim8-epel-7.repo
 }
 
-
 yum_remove()
 {
     for pkg in "$@"; do
@@ -99,7 +98,7 @@ pipconf_install()
     mkdir "$HOME/.pip"
 
     {
-        cat <<-END
+        cat <<-'END'
 source pip.conf
 END
     } > "$HOME/.pip/pip.conf"
@@ -175,7 +174,7 @@ pip_pkg_all()
 }
 
 make_ssh_key() {
-    info make_ssh_key \
+    info "make_ssh_key: $HOME/.ssh/id_rsa" \
         && { [ -f "$HOME/.ssh/id_rsa" ] && info "exists" && return 0 || ``; } \
         && mkdir -p ~/.ssh \
         && ssh-keygen -f ~/.ssh/id_rsa -N "" \
@@ -185,6 +184,8 @@ make_ssh_key() {
 
 screenrc_install()
 {
+    info "install $HOME/.screenrc"
+
     if [ -f "$HOME/.screenrc" ]; then
         return 0
     fi
@@ -192,14 +193,18 @@ screenrc_install()
     # source is replace by Makefile
 
     {
-    cat<<-END
+    cat<<-'END'
 source screenrc
 END
     } >"$HOME/.screenrc"
+
+    ls -l "$HOME/.screenrc"
 }
 
 tmuxconf_install()
 {
+    info "install $HOME/.tmux.conf"
+
     if [ -f "$HOME/.tmux.conf" ]; then
         return 0
     fi
@@ -207,11 +212,32 @@ tmuxconf_install()
     # source is replace by Makefile
 
     {
-    cat<<-END
+    cat<<-'END'
 source tmux.conf
 END
     } >"$HOME/.tmux.conf"
 
+    ls -l "$HOME/.tmux.conf"
+}
+
+bashrc_install()
+{
+    info "install $HOME/.bashrc"
+
+    if [ -f "$HOME/.bashrc" ] && grep -q 's2-dev-env' "$HOME/.bashrc"; then
+        return 0
+    fi
+
+    # source is replace by Makefile
+
+    {
+    cat<<-'END'
+# s2-dev-env auto generated
+source bashrc
+END
+    } >"$HOME/.bashrc"
+
+    ls -l "$HOME/.bashrc"
 }
 
 main()
@@ -224,10 +250,11 @@ main()
     yum_install $(yum_pkg_util)  || die yum_install util
     yum_install $(yum_pkg_dev)   || die yum_install dev
     pipconf_install              || die pipconf_install
-    pip2_install $(pip_pkg_all)   || die pip2_install all
+    pip2_install $(pip_pkg_all)  || die pip2_install all
     make_ssh_key                 || die make_ssh_key
     screenrc_install             || die screenrc_install
     tmuxconf_install             || die tmuxconf_install
+    bashrc_install               || die bashrc_install
 }
 
 main "$@"

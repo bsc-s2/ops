@@ -1,0 +1,97 @@
+# User specific aliases and functions
+
+alias rm='rm -i'
+alias cp='cp -i'
+alias mv='mv -i'
+export HISTFILESIZE=500000000
+export HISTSIZE=1000000
+export HISTTIMEFORMAT="%Y/%m/%d %H:%M:%S "
+export HISTORY_DIR=/var/log/command_history
+export HISTORY_FILE=${HISTORY_DIR}/`date '+%Y-%m-%d'`.log
+
+LANG="zh_CN.UTF-8"
+LC_ALL="zh_CN.UTF-8"
+
+export PROMPT_COMMAND='{ date "+%Y-%m-%d %T ##### $(who am i |awk "{print \$1\" \"\$2\" \"\$5}")  #### $(history 1 | { read x cmd; echo "$cmd"; })"; } >> $HISTORY_FILE'
+
+if [ ! -d $HISTORY_DIR ];then
+    mkdir -p $HISTORY_DIR
+fi
+
+if [ ! -f $HISTORY_FILE ];then
+    touch $HISTORY_FILE
+fi
+
+chmod a+w $HISTORY_FILE
+
+# Source global definitions
+if [ -f /etc/bashrc ]; then
+    . /etc/bashrc
+fi
+
+os_detect()
+{
+    case $(uname -s) in
+        Linux)
+            os=linux ;;
+        *[bB][sS][dD])
+            os=bsd ;;
+        Darwin)
+            os=mac ;;
+        *)
+            os=unix ;;
+    esac
+    echo $os
+}
+
+ps_pwd()
+{
+    local LightBlue="$(tput bold ; tput setaf 4)"
+    local NC="$(tput sgr0)" # No Color
+    local height=$(tput lines)
+
+    local cwd="${PWD#$HOME}"
+    if test ".$cwd" != ".$PWD"; then
+        cwd="~$cwd"
+    fi
+    test "$height" -gt 10 \
+        && echo "
+$LightBlue$cwd$NC" \
+        || echo " $LightBlue$cwd$NC"
+}
+init_prompt()
+{
+    Red="$(tput setaf 1)"
+    Green="$(tput setaf 2)"
+    LightGreen="$(tput bold ; tput setaf 2)"
+    Brown="$(tput setaf 3)"
+    Yellow="$(tput bold ; tput setaf 3)"
+    LightBlue="$(tput bold ; tput setaf 4)"
+    NC="$(tput sgr0)" # No Color
+
+    local ps="$Green\u \h$NC"
+    ps=$ps"$Yellow${eth0_ip}$NC"
+    ps=$ps".\j"
+
+    # current git branch
+    ps=$ps" $LightGreen\$(git branch --no-color 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/(\1)/')$NC"
+
+    # tracking remote branc
+    ps=$ps" -> $Red\$(git config --get branch.\$(git symbolic-ref --short HEAD 2>/dev/null).remote 2>/dev/null)/$NC"
+    ps=$ps"$Brown\$(git config --get branch.\$(git symbolic-ref --short HEAD 2>/dev/null).merge 2>/dev/null | sed 's/^refs\/heads\///')$NC"
+    ps=$ps" \t:"
+    ps=$ps"\$(ps_pwd 2>/dev/null || { echo; pwd; })\n"
+    ps=$ps"☛ "
+    export PS1="$ps"
+}
+os=$(os_detect)
+if [ "$os" = "linux" ] ; then
+    eth0_ip=`echo $(/sbin/ifconfig  | grep 'inet \(addr:\)\?'| grep -v '127.0.0.1' |  grep -v 'Mask:255.255.255.255' | awk '{gsub("addr:","",$2); print " <"$2">"}')`
+elif [ "$os" = "bsd" ]; then
+    eth0_ip=`/sbin/ifconfig | grep "inet"|awk -F "." '{print $3"."$4}'| awk '{print $2}' | head -n 3`
+elif [ "$os" == "mac" ]; then
+    eth0_ip=`ifconfig  | grep '\binet\b' | grep -v '127.0.0.1' | awk '/inet /{i = i " <" substr($2, 1) ">"} END{print i}'`
+else
+    eth0_ip="unknown"
+fi
+init_prompt
