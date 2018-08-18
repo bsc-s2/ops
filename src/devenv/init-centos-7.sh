@@ -12,6 +12,7 @@ yum_repo_add()
 yum_remove()
 {
     for pkg in "$@"; do
+        info "yum remove $pkg"
         yum remove -y $pkg || die yum remove $pkg
     done
 }
@@ -19,6 +20,7 @@ yum_remove()
 yum_install()
 {
     for pkg in "$@"; do
+        info "yum install $pkg"
         yum install -y $pkg || die yum install $pkg
     done
 }
@@ -32,7 +34,7 @@ yum_pkg_util()
 {
     echo git-all
     echo graphviz           # draw graph `dot`
-    echo gunplot            # chart/plotting tool
+    echo gnuplot            # chart/plotting tool
     echo mercurial          # version control `hg`
     echo vim-enhanced
 
@@ -70,6 +72,11 @@ yum_pkg_dev()
     echo openssl-devel
     echo libcurl-devel
 
+    echo mysql-devel # for MySQL-python
+
+    echo python2-pip
+    echo python-devel # for building ipython
+
     echo perl-devel
 
     echo file-devel # magic.h
@@ -83,15 +90,101 @@ yum_pkg_dev()
     echo gperftools-libs # tcmalloc
 }
 
+pipconf_install()
+{
+    if [ -f "$HOME/.pip/pip.conf" ]; then
+        return 0
+    fi
+
+    mkdir "$HOME/.pip"
+
+    {
+        cat <<-END
+source pip.conf
+END
+    } > "$HOME/.pip/pip.conf"
+}
+
+pip2_install()
+{
+    info "pip2 upgrape pip"
+    pip2 install --upgrade pip
+
+    for pkg in "$@"; do
+        info "pip2 install $pkg"
+        pip2 install $pkg || die pip install $pkg
+    done
+}
+
+pip_pkg_all()
+{
+    # interactive python
+
+    echo ipython==5.7.0    # the latest ipython that supports python2.7 
+
+    echo googlecl
+    echo pipdeptree
+    echo virtualenv
+
+    echo json2yaml
+    echo pypinyin        # convert 汉子 to pinyin
+
+    echo MySQL-python
+
+    echo pygtrie       # trie impl by google
+
+    echo requests
+    echo urllib3
+    echo scrapy
+    echo tinycss
+    echo markdown2
+    echo netifaces
+    echo psutil            # get cpu, memory, network stats
+    echo glances           # An eye on your system
+    echo bottle            # web framework for glances
+    echo dbx-stopwatch     # profiler
+    echo mysql-replication # import pymysqlreplication
+    echo subprocess32      # replacement of subprocess, fixed Popen race-condition: http://drmingdrmer.github.io/tech/programming/2017/11/20/python-concurrent-popen.html
+
+    # debugging
+
+    echo objgraph
+    echo pyrasite  # attach to existing python program
+    echo guppy     # memory examine
+    echo snakefood # dependency graph
+
+    echo jedi     # Awesome autocompletion and static analysis library for python
+
+    echo GitPython
+    echo gitconfig
+    echo shadowsocks
+
+    # code lint / format
+
+    echo pyflakes
+    echo flake8
+    echo autoflake
+    echo autopep8
+    echo isort
+    echo yapf    # code formatter
+    echo vulture # find unused function and variables
+
+    echo unp    # unpack anythin
+    echo pydf   # python version of linux `df`
+    echo ici    # dictionary
+}
+
 main()
 {
-    info start init centos-7
+    info "start init centos-7"
 
     yum_repo_add                 || die yum_repo_add
     yum_remove $(yum_pkg_unused) || die yum_remove
     yum update -y                || die yum update
     yum_install $(yum_pkg_util)  || die yum_install util
     yum_install $(yum_pkg_dev)   || die yum_install dev
+    pipconf_install              || die pipconf_install
+    pip2_install $(pip_pkg_all)   || die pip2_install all
 }
 
 main "$@"
