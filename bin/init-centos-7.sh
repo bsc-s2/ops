@@ -22,7 +22,7 @@ main()
 
 yum_repo_add()
 {
-    curl -L https://copr.fedorainfracloud.org/coprs/mcepl/vim8/repo/epel-7/mcepl-vim8-epel-7.repo \
+    sudo curl -L https://copr.fedorainfracloud.org/coprs/mcepl/vim8/repo/epel-7/mcepl-vim8-epel-7.repo \
         -o /etc/yum.repos.d/mcepl-vim8-epel-7.repo
 }
 
@@ -30,7 +30,7 @@ yum_remove()
 {
     for pkg in "$@"; do
         info "yum remove $pkg"
-        yum remove -y $pkg || die yum remove $pkg
+        sudo yum remove -y $pkg || die yum remove $pkg
     done
 }
 
@@ -38,7 +38,7 @@ yum_install()
 {
     for pkg in "$@"; do
         info "yum install $pkg"
-        yum install -y $pkg || die yum install $pkg
+        sudo yum install -y $pkg || die yum install $pkg
     done
 }
 
@@ -128,11 +128,11 @@ END
 pip2_install()
 {
     info "pip2 upgrape pip"
-    pip2 install --upgrade pip
+    sudo pip2 install --upgrade pip
 
     for pkg in "$@"; do
         info "pip2 install $pkg"
-        pip2 install $pkg || die pip install $pkg
+        sudo pip2 install $pkg || die pip install $pkg
     done
 }
 
