@@ -8,7 +8,6 @@ yum_repo_add()
         -o /etc/yum.repos.d/mcepl-vim8-epel-7.repo
 }
 
-
 yum_remove()
 {
     for pkg in "$@"; do
@@ -214,6 +213,21 @@ END
 
 }
 
+bashrc_install()
+{
+    if [ -f "$HOME/.bashrc" ]; then
+        return 0
+    fi
+
+    # source is replace by Makefile
+
+    {
+    cat<<-END
+source bashrc
+END
+    } >"$HOME/.bashrc"
+}
+
 main()
 {
     info "start init centos-7"
@@ -228,6 +242,7 @@ main()
     make_ssh_key                 || die make_ssh_key
     screenrc_install             || die screenrc_install
     tmuxconf_install             || die tmuxconf_install
+    bashrc_install               || die bashrc_install
 }
 
 main "$@"
