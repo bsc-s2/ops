@@ -702,7 +702,7 @@ vim_plugin_install()
             || die "clone $vundle_path/Vundle.vim"
     fi
 
-    vim +BundleInstall +qall
+    vim +BundleInstall +qall - </dev/null
 }
 
 #!/bin/sh
