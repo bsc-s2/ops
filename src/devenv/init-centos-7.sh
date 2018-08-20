@@ -260,7 +260,7 @@ vimrc_install()
 {
     info "install $HOME/.vimrc"
 
-    if [ -f "$HOME/.vimrc" ]; then
+    if [ -f "$HOME/.vimrc" ] && grep -q 's2-dev-env' "$HOME/.vimrc"; then
         return 0
     fi
 
@@ -268,6 +268,7 @@ vimrc_install()
 
     {
     cat<<-'END'
+" s2-dev-env auto generated
 source vimrc
 END
     } >"$HOME/.vimrc"

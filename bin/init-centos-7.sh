@@ -411,7 +411,7 @@ vimrc_install()
 {
     info "install $HOME/.vimrc"
 
-    if [ -f "$HOME/.vimrc" ]; then
+    if [ -f "$HOME/.vimrc" ] && grep -q 's2-dev-env' "$HOME/.vimrc"; then
         return 0
     fi
 
@@ -419,6 +419,272 @@ vimrc_install()
 
     {
     cat<<-'END'
+" s2-dev-env auto generated
+" vundle
+set nocompatible               " be iMproved, required
+filetype off                   " required
+set rtp+=~/.vim/bundle/vundle/
+call vundle#rc()
+
+Bundle 'gmarik/vundle'
+"""""""""""""""""""""""" above lines must be at the top """"""""""""""""""""""""
+
+Bundle 'Raimondi/delimitMate'
+Bundle 'tpope/vim-fugitive'
+Bundle 'kshenoy/vim-signature'
+
+" general setting 
+set bs=2                         " allow backspacing over everything in insert mode
+set history=50                   " keep 50 lines of command line history
+set ruler                        " show the cursor position all the time
+set autoread                     " auto read when file is changed from outside
+syntax enable                    " syntax highlight
+filetype on                      " Enable filetype detection
+filetype indent on               " Enable filetype-specific indenting
+filetype plugin on               " Enable filetype-specific plugins
+
+set hlsearch                     " search highlighting
+noremap <C-h> :noh<CR>
+set t_Co=256                     " 256 color mode
+set cc=80                        " do not exceed 80 chars
+set cursorline                   " highlight current line
+set cursorcolumn
+
+if $TMUX == ''
+    set clipboard=unnamed        " yank to the system register (*) by default
+endif
+
+set showmatch                    " Cursor shows matching ) and }
+set showmode                     " Show current mode
+set wildchar=<TAB>               " start wild expansion in the command line using <TAB>
+set wildmenu                     " wild char completion menu
+set wildignore=*.o,*.class,*.pyc " ignore these files while expanding wild chars
+set previewheight=8              " preview window height
+
+set autoindent                   " auto indentation
+set incsearch                    " incremental search
+set nobackup                     " no *~ backup files
+set noswapfile
+set copyindent                   " copy the previous indentation on autoindenting
+set ignorecase                   " ignore case when searching
+set smartcase                    " ignore case if search pattern is all lowercase,case-sensitive otherwise
+set nu                           " display line number
+set nowrap                       " no wrap line
+
+" disable sound on errors
+set noerrorbells
+set visualbell
+set tm=500
+
+set encoding=utf-8
+set termencoding=utf-8
+set fileencoding=utf-8
+set fileencodings=ucs-bom,utf-8,big5,gb2312,latin1
+
+set listchars=trail:☠,extends:<,precedes:> " handle space and trial
+
+set ts=4
+set softtabstop=4
+set shiftwidth=4
+set expandtab       " replace <TAB> with spaces
+let mapleader = "," " rebind map
+
+function! CurDir()
+    let curdir = substitute(getcwd(), $HOME, "~", "")
+    return curdir
+endfunction
+
+function! HasPaste()
+    if &paste
+        return '[PASTE]'
+    else
+        return ''
+    endif
+endfunction
+
+
+""""""""""""""""""""""""""""""""""" plugins """"""""""""""""""""""""""""""""""""
+Bundle 'majutsushi/tagbar'
+let g:tagbar_left = 1
+let g:tagbar_width = 25
+let g:tagbar_autoshowtag = 1
+noremap <C-j> :TagbarToggle<CR>
+
+
+Bundle 'bling/vim-airline'
+let g:airline_theme ='dark'
+let g:airline_highlighting_cache=1
+
+
+Bundle 'kien/ctrlp.vim'
+let g:ctrlp_map = '<c-p>'
+let g:ctrlp_cmd = 'CtrlP'
+let g:ctrlp_working_path_mode = 'ra'
+let g:ctrlp_max_files=0
+
+
+Bundle 'klen/python-mode'
+let g:pymode_folding = 0            " do not auto-fold
+let g:pymode_quickfix_minheight = 4 " quick-fix window
+let g:pymode_quickfix_maxheight = 4
+
+" rope conf
+let g:pymode_rope = 1
+let g:pymode_rope_ropefolder='.ropeproject' " rope index
+let g:pymode_rope_show_doc_bind = '<C-c>d'
+let g:pymode_rope_goto_definition_cmd = 'e'
+
+" support virtualenv
+let g:pymode_virtualenv = 1
+
+" enable breakpoints plugin
+let g:pymode_breakpoint = 1
+let g:pymode_breakpoint_bind = '<leader>b'
+
+let g:pymode_syntax = 1
+let g:pymode_syntax_all = 1
+let g:pymode_syntax_indent_errors = g:pymode_syntax_all
+let g:pymode_syntax_space_errors = g:pymode_syntax_all
+
+" python IDE
+let python_highlight_all = 1
+let g:pymode_rope_complete_on_dot = 0
+
+
+Bundle 'fatih/vim-go'
+au FileType go nmap <leader>b <Plug>(go-build)
+au FileType go nmap <leader>t <Plug>(go-test)
+
+au FileType go nmap <Leader>gd <Plug>(go-doc)
+au FileType go nmap <Leader>s <Plug>(go-implements)
+au FileType go nmap <Leader>i <Plug>(go-info)
+au FileType go nmap <Leader>e <Plug>(go-rename)
+au FileType go nmap <Leader>d <Plug>(go-callees)
+au FileType go nmap <Leader>c <Plug>(go-callers)
+au FileType go nmap <Leader>r <Plug>(go-referrers)
+au FileType go nmap <Leader>p <Plug>(go-channelpeers)
+au FileType go nmap <Leader>[ <Plug>(go-def)
+
+let g:go_highlight_functions = 1
+let g:go_highlight_methods = 1
+let g:go_highlight_structs = 1
+let g:go_highlight_interfaces = 1
+let g:go_highlight_operators = 1
+let g:go_highlight_build_constraints = 1
+let g:go_fmt_command = 'gofmt'
+let g:go_auto_type_info = 1
+
+let g:syntastic_go_checkers = ['golint', 'govet', 'errcheck']
+let g:syntastic_mode_map = { 'mode': 'active', 'passive_filetypes': ['go'] }
+
+
+Bundle 'pearofducks/ansible-vim'
+autocmd FileType yaml set syntax=ansible
+autocmd FileType yaml setlocal ts=2 sts=2 sw=2 expandtab
+let g:ansible_name_highlight = 'b'
+
+
+Bundle 'xolox/vim-lua-ftplugin'
+Bundle 'xolox/vim-misc'
+Bundle 'WolfgangMehner/lua-support'
+autocmd FileType lua set suffixesadd=.lua
+
+
+Bundle 'crooloose/nerdtree'
+map <C-n> :NERDTreeToggle<CR>
+autocmd bufenter * if (winnr("$") == 1 && exists("b:NERDTree") && b:NERDTree.isTabTree()) | q | endif
+let g:NERDTreeDirArrowExpandable = '▸'
+let g:NERDTreeDirArrowCollapsible = '▾'
+let NERDTreeWinPos = 1
+
+
+Bundle 'dkprice/vim-easygrep'
+let EasyGrepRecursive = 0
+let EasyGrepWindow = 1
+
+
+Bundle 'vim-syntastic/syntastic'
+let g:syntastic_always_populate_loc_list = 1
+let g:syntastic_auto_loc_list = 1
+let g:syntastic_check_on_open = 1
+let g:syntastic_check_on_wq = 0
+let g:syntastic_lua_checkers = ['luac', 'luacheck']
+let g:syntastic_lua_luacheck_args = "--no-redefined --std ngx_lua+lua51c+luajit --codes --module"
+let g:syntastic_mode_map = { "mode": "active", "active_filetypes": ["lua", "yaml", "json"], "passive_filetypes": ["c", "python", "go"] }
+
+
+Bundle 'Shougo/neocomplete.vim'
+let g:acp_enableAtStartup = 0                           " Disable AutoComplPop.
+let g:neocomplete#enable_at_startup = 1                 " Use neocomplete.
+let g:neocomplete#enable_smart_case = 1                 " Use smartcase.
+let g:neocomplete#sources#syntax#min_keyword_length = 3 " Set minimum syntax keyword length.
+let g:neocomplete#lock_buffer_name_pattern = '\*ku\*'
+
+" Define dictionary.
+let g:neocomplete#sources#dictionary#dictionaries = {
+    \ 'default' : '',
+    \ 'vimshell' : $HOME.'/.vimshell_hist',
+    \ 'scheme' : $HOME.'/.gosh_completions'
+    \ }
+" Define keyword.
+if !exists('g:neocomplete#keyword_patterns')
+    let g:neocomplete#keyword_patterns = {}
+endif
+let g:neocomplete#keyword_patterns['default'] = '\h\w*'
+
+" Plugin key-mappings.
+inoremap <expr><C-g>     neocomplete#undo_completion()
+inoremap <expr><C-l>     neocomplete#complete_common_string()
+
+" Recommended key-mappings.
+" <CR>: close popup and save indent.
+inoremap <silent> <CR> <C-r>=<SID>my_cr_function()<CR>
+function! s:my_cr_function()
+  return (pumvisible() ? "\<C-y>" : "" ) . "\<CR>"
+endfunction
+
+" <TAB>: completion.
+inoremap <expr><TAB>  pumvisible() ? "\<C-n>" : "\<TAB>"
+" <C-h>, <BS>: close popup and delete backword char.
+inoremap <expr><C-h> neocomplete#smart_close_popup()."\<C-h>"
+inoremap <expr><BS> neocomplete#smart_close_popup()."\<C-h>"
+
+" AutoComplPop like behavior.
+let g:neocomplete#enable_auto_select = 0
+autocmd FileType python NeoCompleteLock
+autocmd FileType c NeoCompleteLock
+autocmd FileType c++ NeoCompleteLock
+autocmd FileType go NeoCompleteLock
+
+
+Bundle 'scrooloose/nerdcommenter'
+let g:NERDSpaceDelims = 4
+let g:NERDCustomDelimiters = {
+    \ 'c': {'left': '/**','right': '*/', 'leftAlt': '//'},
+    \ 'lua': {'left': '--'},
+    \ 'python': {'left': "'''", 'right': "'''"}
+    \ }
+
+
+Bundle 'junegunn/vim-easy-align'
+set cino+=(0 " align multiple line arguments
+xmap ga <Plug>(EasyAlign)
+nmap ga <Plug>(EasyAlign)
+let g:easy_align_delimiters = {
+\ '\': {
+\     'pattern':         '\\$'
+\  },
+\  '/': {
+\     'pattern':         '//\+\|/\*\|\*/',
+\     'delimiter_align': 'l',
+\     'ignore_groups':   ['!Comment']
+\  },
+\ }
+
+
+""""""""" All of your Plugins must be added before the following line """"""""""
+call vundle#end()            " required
+filetype plugin indent on    " required
 END
     } >"$HOME/.vimrc"
 
