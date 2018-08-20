@@ -273,7 +273,7 @@ source vimrc
 END
     } >"$HOME/.vimrc"
 
-    # TODO init plugins
+    vim +BundleInstall +qall > /dev/null 2>&1
 }
 
 source ../shlib.sh

@@ -65,7 +65,6 @@ set ts=4
 set softtabstop=4
 set shiftwidth=4
 set expandtab       " replace <TAB> with spaces
-let mapleader = "," " rebind map
 
 function! CurDir()
     let curdir = substitute(getcwd(), $HOME, "~", "")
