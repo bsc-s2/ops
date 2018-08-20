@@ -16,6 +16,7 @@ main()
     tmuxconf_install                   || die tmuxconf_install
     bashrc_install                     || die bashrc_install
     vimrc_install                      || die vimrc_install
+    vim_plugin_install                 || die vim_plugin_install
 
     ok Done init centos-7 as a minimal dev env
 }
@@ -272,7 +273,11 @@ vimrc_install()
 source vimrc
 END
     } >"$HOME/.vimrc"
+}
 
+vim_plugin_install()
+{
+    info "install vim plugins with BundleInstall"
     vim +BundleInstall +qall > /dev/null 2>&1
 }
 
