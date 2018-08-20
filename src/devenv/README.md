@@ -39,6 +39,17 @@ development**.
 Using it to init a production server is OK too.
 
 
+#   What is included in this dev-env
+
+-   languages such as: gcc python2 perl and other libs
+-   admin tools such as lsof etc
+-   screen and tmux
+-   ipython and pip packages such as pyflakes
+-   .screenrc, .tmux.conf, .bashrc
+-   ssh key
+-   basic .vimrc and several vim plugins.
+
+
 #   Contribute
 
 A Makefile builds the above two script: `bin/create-vagrant-vm-mac.sh` and

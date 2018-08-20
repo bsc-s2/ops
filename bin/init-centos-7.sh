@@ -424,7 +424,7 @@ vimrc_install()
 " vundle
 set nocompatible               " be iMproved, required
 filetype off                   " required
-set rtp+=~/.vim/bundle/vundle/
+set rtp+=~/.vim/bundle/Vundle.vim/
 call vundle#rc()
 
 Bundle 'gmarik/vundle'
@@ -692,7 +692,17 @@ END
 vim_plugin_install()
 {
     info "install vim plugins with BundleInstall"
-    vim +BundleInstall +qall > /dev/null 2>&1
+
+    vundle_path="$HOME/.vim/bundle"
+    if [ ! -d "$vundle_path/Vundle.vim" ]; then
+        mkdir -p "$vundle_path" || die make dir "$vundle_path"
+
+        git clone https://github.com/VundleVim/Vundle.vim.git \
+            $vundle_path/Vundle.vim \
+            || die "clone $vundle_path/Vundle.vim"
+    fi
+
+    vim +BundleInstall +qall
 }
 
 #!/bin/sh
