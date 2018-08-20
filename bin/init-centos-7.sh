@@ -590,7 +590,7 @@ Bundle 'WolfgangMehner/lua-support'
 autocmd FileType lua set suffixesadd=.lua
 
 
-Bundle 'crooloose/nerdtree'
+Bundle 'scrooloose/nerdtree'
 map <C-n> :NERDTreeToggle<CR>
 autocmd bufenter * if (winnr("$") == 1 && exists("b:NERDTree") && b:NERDTree.isTabTree()) | q | endif
 let g:NERDTreeDirArrowExpandable = '▸'
