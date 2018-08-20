@@ -278,7 +278,15 @@ END
 vim_plugin_install()
 {
     info "install vim plugins with BundleInstall"
-    vim +BundleInstall +qall
+
+    vundle_path="$HOME/.vim/bundle"
+    if [ ! -f "$vundle_path/Vundle.vim" ]; then
+        mkdir -p "$vundle_path" > /dev/null 2>&1
+
+        git clone https://github.com/VundleVim/Vundle.vim.git $vundle_path/Vundle.vim
+    fi
+
+    vim +BundleInstall +qall > /dev/null 2>&1
 }
 
 source ../shlib.sh
