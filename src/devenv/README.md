@@ -2,6 +2,8 @@
 
 Create a vagrant VM on Mac as a personal development enviroment in 2 steps.
 
+![](screen-shot.png)
+
 #   Usage
 
 ##  1. Create and start centos-7 VM:
