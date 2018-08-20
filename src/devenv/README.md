@@ -52,6 +52,11 @@ Using it to init a production server is OK too.
 -   basic .vimrc and several vim plugins.
 
 
+#   Feed back
+
+If you have any trouble using these script, let us know and let us fix it:
+[Get help](https://github.com/bsc-s2/ops/issues/new)
+
 #   Contribute
 
 A Makefile builds the above two script: `bin/create-vagrant-vm-mac.sh` and
