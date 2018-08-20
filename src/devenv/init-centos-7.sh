@@ -278,7 +278,7 @@ END
 vim_plugin_install()
 {
     info "install vim plugins with BundleInstall"
-    vim +BundleInstall +qall > /dev/null 2>&1
+    vim +BundleInstall +qall
 }
 
 source ../shlib.sh
