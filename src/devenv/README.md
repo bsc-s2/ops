@@ -4,7 +4,7 @@ Create a vagrant VM on Mac as a personal development enviroment in 2 steps.
 
 #   Usage
 
-##  Create and start centos-7 VM:
+##  1. Create and start centos-7 VM:
 
 Make a directory for VM(vagrant needs a dir for every VM), e.g.:
 
@@ -20,7 +20,7 @@ then create a VM.
 curl https://raw.githubusercontent.com/bsc-s2/ops/master/bin/create-vagrant-vm-mac.sh | sh
 ```
 
-## Init a vagrant VM for dev:
+## 2. Init a vagrant VM for dev:
 
 Enter VM via ssh:
 
