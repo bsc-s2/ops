@@ -6,6 +6,10 @@ die()
     exit 1
 }
 
+boxname=centos-7-2
+boxfn=centos-7-2-virtualbox.box
+
+
 if which vagrant >/dev/null 2>/dev/null; then
     :
 else
@@ -13,23 +17,23 @@ else
     brew cask install vagrant || die install vagrant
 fi
 
-if vagrant box list | grep -q "^centos-7-14"; then
+if vagrant box list | grep -q "^$boxname"; then
     :
 else
     # Download and add the virtualbox image for centos-7.
 
-    wget "http://bspackage.ss.bscstorage.com/vagrant-box/centos-7-14-1804-x86-64-virtualbox.box?AWSAccessKeyId=yqs7ofbweuzk8p59ca6n&Expires=1621021030&Signature=MSLB2AjoYOUKvG0zmgkEshzElKU%3D" \
-        -O centos-7-14-1804-x86-64-virtualbox.box \
+    wget "http://bspackage.ss.bscstorage.com/vagrant-box/$boxfn?AWSAccessKeyId=yqs7ofbweuzk8p59ca6n&Expires=1621133661&Signature=QLnjatuLZJVA5oX95litgSmdw9E%3D" \
+        -O $boxfn \
         || die download image
 
-    vagrant box add --name centos-7-14 centos-7-14-1804-x86-64-virtualbox.box \
+    vagrant box add --name $boxname $boxfn \
         || die vagrant box add
 
-    rm centos-7-14-1804-x86-64-virtualbox.box
+    rm $boxfn
 fi
 
 # Create VM config:
 
-vagrant init centos-7-14 || die init centos-7-14
+vagrant init $boxname || die init $boxname
 
 vagrant up
