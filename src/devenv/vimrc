@@ -26,7 +26,6 @@ noremap <C-h> :noh<CR>
 set t_Co=256                     " 256 color mode
 set cc=80                        " do not exceed 80 chars
 set cursorline                   " highlight current line
-set cursorcolumn
 
 if $TMUX == ''
     set clipboard=unnamed        " yank to the system register (*) by default
