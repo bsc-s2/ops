@@ -10,11 +10,17 @@ boxname=centos-7-2
 boxfn=centos-7-2-virtualbox.box
 
 
+if which VirtualBox >/dev/null 2>/dev/null; then
+    :
+else
+    # Install virtualbox
+    brew install virtualbox || die install virtualbox
+fi
+
 if which vagrant >/dev/null 2>/dev/null; then
     :
 else
     # Install vagrant
-    brew install virtualbox || die install virtualbox
     brew cask install vagrant || die install vagrant
 fi
 
