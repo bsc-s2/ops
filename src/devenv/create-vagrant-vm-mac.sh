@@ -14,6 +14,7 @@ if which vagrant >/dev/null 2>/dev/null; then
     :
 else
     # Install vagrant
+    brew install virtualbox || die install virtualbox
     brew cask install vagrant || die install vagrant
 fi
 
@@ -22,8 +23,8 @@ if vagrant box list | grep -q "^$boxname"; then
 else
     # Download and add the virtualbox image for centos-7.
 
-    wget "http://bspackage.ss.bscstorage.com/vagrant-box/$boxfn?AWSAccessKeyId=yqs7ofbweuzk8p59ca6n&Expires=1621133661&Signature=QLnjatuLZJVA5oX95litgSmdw9E%3D" \
-        -O $boxfn \
+    curl "http://bspackage.ss.bscstorage.com/vagrant-box/$boxfn?AWSAccessKeyId=yqs7ofbweuzk8p59ca6n&Expires=1621133661&Signature=QLnjatuLZJVA5oX95litgSmdw9E%3D" \
+        > $boxfn \
         || die download image
 
     vagrant box add --name $boxname $boxfn \
