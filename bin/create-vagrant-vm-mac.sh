@@ -14,7 +14,7 @@ if which VirtualBox >/dev/null 2>/dev/null; then
     :
 else
     # Install virtualbox
-    brew install virtualbox || die install virtualbox
+    brew cask install virtualbox || die install virtualbox
 fi
 
 if which vagrant >/dev/null 2>/dev/null; then
