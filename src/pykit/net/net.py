@@ -8,18 +8,14 @@ import types
 import netifaces
 import yaml
 
+from pykit import config
+
 PUB = 'PUB'
 INN = 'INN'
 
 LOCALHOST = '127.0.0.1'
 
 logger = logging.getLogger(__name__)
-
-_intra_patterns = (
-    '172\.(1[6-9]|2[0-9]|3[0-1]).*',
-    '10\..*',
-    '192\.168\..*',
-)
 
 
 class NetworkError(Exception):
@@ -62,7 +58,7 @@ def ip_class(ip):
     if ip.startswith('127.0.0.'):
         return INN
 
-    for ptn in _intra_patterns:
+    for ptn in config.inner_ip_patterns:
 
         if re.match(ptn, ip):
             return INN

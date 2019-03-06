@@ -17,6 +17,8 @@
     - [TrieNode.char](#trienodechar)
     - [TrieNode.outstanding](#trienodeoutstanding)
     - [TrieNode.is_outstanding](#trienodeis_outstanding)
+  - [strutil.Hex](#strutilhex)
+    - [Hex instance attributes](#hex-instance-attributes)
 - [Methods](#methods)
   - [strutil.break_line](#strutilbreak_line)
   - [strutil.color](#strutilcolor)
@@ -25,11 +27,13 @@
   - [strutil.line_pad](#strutilline_pad)
   - [strutil.make_trie](#strutilmake_trie)
   - [strutil.format_line](#strutilformat_line)
+  - [strutil.page](#strutilpage)
   - [strutil.sharding](#strutilsharding)
   - [strutil.struct_repr](#strutilstruct_repr)
   - [strutil.format_table](#strutilformat_table)
   - [strutil.filter_invisible_chars](#strutilfilter_invisible_chars)
   - [strutil.tokenize](#strutiltokenize)
+  - [strutil.parse_colon_kvs](#strutilparse_colon_kvs)
 - [Author](#author)
 - [Copyright and License](#copyright-and-license)
 
@@ -291,6 +295,96 @@ This attribute points to the last added child node.
 
 If this node is an outstanding node to its parent node.  When created, a node
 must be an outstanding node.
+
+
+##  strutil.Hex
+
+**syntax**:
+`strutil.Hex(data, byte_length)`
+
+Create a `str` based instance that represents a fixed-length hex string,
+to simplify hex and arithmetic operations.
+
+An `Hex` instance supports arithmetic operations: `+ - * / % **`.
+
+NOTE: **it overrides native `str` operation such as `str + str`**.
+
+**arguments**:
+
+-   `data`:
+    can be a `str`, `int` or tuple in form of `(<prefix_hex>, <filling_byte>)`
+
+-   `byte_length`:
+    specifies number of bytes for this hex.
+    It can not be changed after creating it.
+
+    > byte length x 2 = hex length
+
+    It also can be a symblic name: `crc32`, `md5`, `sha1` or `sha256`.
+
+**Synopsis**:
+
+```python
+from pykit.strutil import Hex
+
+
+# Different ways to create a 4-byte crc32 hex str
+
+Hex(0x0102, 4)           # 00000102
+Hex(0x0102, 'crc32')     # 00000102
+Hex.crc32(0x0102)        # 00000102
+Hex('00000102', 'crc32') # 00000102
+Hex.crc32('00000102')    # 00000102
+
+
+# Create with a tuple of prefix and a filling byte
+
+Hex(('12', 1), 'crc32')  # 12010101
+
+
+# Arithmetic operations
+
+c = Hex(0x0102, 'crc32')
+d = c + 1
+print type(d), d         # <class 'pykit.strutil.hex.Hex'> 00000103
+print repr(c*2)          # '00000204'
+print c - 1000000        # 00000000 # overflow protection
+print c * 1000000        # ffffffff # overflow protection
+
+
+# Iterate over sha1 space with a specific step:
+
+c = Hex.sha1(0)
+step = Hex.sha1(('10', 0))
+for i in range(16):
+    print c
+    c += step
+
+# 0000000000000000000000000000000000000000
+# 1000000000000000000000000000000000000000
+# 2000000000000000000000000000000000000000
+# 3000000000000000000000000000000000000000
+# 4000000000000000000000000000000000000000
+# 5000000000000000000000000000000000000000
+# 6000000000000000000000000000000000000000
+# 7000000000000000000000000000000000000000
+# 8000000000000000000000000000000000000000
+# 9000000000000000000000000000000000000000
+# a000000000000000000000000000000000000000
+# b000000000000000000000000000000000000000
+# c000000000000000000000000000000000000000
+# d000000000000000000000000000000000000000
+# e000000000000000000000000000000000000000
+# f000000000000000000000000000000000000000
+
+```
+
+###  Hex instance attributes
+
+-   `Hex.hex`: a plain string of hex `'00000102'`.
+-   `Hex.bytes`: a plain string of bytes `'\0\0\1\2'`.
+-   `Hex.int`: a int value `0x0102` same as `int('00000102', 16)`.
+-   `Hex.byte_length`: number of bytes in `Hex.bytes`.
 
 
 #   Methods
@@ -601,6 +695,42 @@ strutil.format_line([["name:", "age:"], ["drdrxp", "18"], "wow"], sep=" | ", ali
 
 **return**:
 formatted string.
+
+
+##  strutil.page
+
+**syntax**:
+`strutil.page(lines, max_lines=10, control_char=True, pager=('less',))`
+
+Display `lines` of string in console, with a pager program (`less`) if too many
+lines.
+
+It could be used in a interactive tool to display large content.
+
+It output strings directly to stdout.
+
+**arguments**:
+
+-   `lines`:
+    is `list` of lines to display.
+
+-   `max_lines`:
+    specifies the max lines not to use a pager.
+
+    By default it is 10 lines.
+
+-   `control_char`:
+    specifies if to interpret controlling chars, such as color char in terminal.
+
+-   `pager`:
+    specifies the program as a pager.
+
+    It is a list of command and argument.
+
+    By default it is `('less',)`.
+
+**return**:
+Nothing.
 
 
 ##  strutil.sharding
@@ -932,6 +1062,36 @@ print tokenize(' a xa bx yc dy ', sep=' ', quote='xy', preserve=True)
 
 **return**:
 a list of string.
+
+## strutil.parse_colon_kvs
+
+**syntax**:
+`strutil.parse_colon_kvs(data)`
+
+Convert a string constant to a dict type of data
+
+```python
+from pykit.strutil import parse_colon_kvs
+
+print parse_colon_kvs("abc:123")
+# {'abc': '123'}
+
+# For repeated keys, using the back value
+print parse_colon_kvs("abc:123 abc:456")
+# {'abc': '456'}
+
+print parse_colon_kvs("")
+# {}
+```
+
+**arguments**:
+
+-    `data`:
+    A string constant, in the format "k:v", is used to convert
+    to data of dict type
+
+**return**:
+the data of dict type
 
 #   Author
 

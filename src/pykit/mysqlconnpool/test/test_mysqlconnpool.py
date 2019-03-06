@@ -2,16 +2,14 @@
 # coding: utf-8
 
 import socket
-import subprocess32
 import time
 import unittest
 
-import docker
 import MySQLdb
 
 from pykit import mysqlconnpool
-from pykit import ututil
 from pykit import utdocker
+from pykit import ututil
 
 dd = ututil.dd
 
@@ -35,34 +33,18 @@ class Testmysqlconnpool(unittest.TestCase):
 
     def setUp(self):
 
-        utdocker.start_container(
-                mysql_test_name,
-                mysql_test_tag,
-                ip=mysql_test_ip,
-                env={
-                    'MYSQL_ROOT_PASSWORD': mysql_test_password,
-                },
-                port_bindings={
-                    mysql_test_port: mysql_test_port
-                }
+        utdocker.create_network()
 
+        utdocker.start_container(
+            mysql_test_name,
+            mysql_test_tag,
+            ip=mysql_test_ip,
+            env={
+                'MYSQL_ROOT_PASSWORD': mysql_test_password,
+            }
         )
 
-        addr = (mysql_test_ip, mysql_test_port)
-
-        # some time it takes several seconds to start listening
-        for ii in range(40):
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                sock.connect(addr)
-                break
-            except socket.error:
-                dd('trying to connect to {0} failed'.format(str(addr)))
-                sock.close()
-                time.sleep(.4)
-        else:
-            raise
+        ututil.wait_listening(mysql_test_ip, mysql_test_port)
 
         self.pool = mysqlconnpool.make({
             'host': mysql_test_ip,

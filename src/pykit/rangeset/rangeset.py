@@ -1,3 +1,5 @@
+#!/usr/bin/env python2
+# coding: utf-8
 
 
 int_types = (int, long)
@@ -9,6 +11,7 @@ compatible_types = {
     long:       (type(None), int,   long, ),
     float:      (type(None), int,   long, float, ),
     str:        (type(None), str,),
+    unicode:    (type(None), unicode,),
     tuple:      (type(None), tuple, ),
     list:       (type(None), list,),
 }
@@ -30,7 +33,7 @@ class ValueRange(list):
 
         if cmp_boundary(left, right) > 0:
             raise ValueError('left not smaller or equal right: {left}, {right}'.format(
-                left=left, right=right))
+                left=repr(left), right=repr(right)))
 
         super(ValueRange, self).__init__([left, right, val])
 
@@ -69,6 +72,31 @@ class ValueRange(list):
 
         if rst[0] is not None and rst[0] == rst[1]:
             return None
+
+        return rst
+
+    def substract(self, b):
+
+        if self.cmp(b) > 0:
+            # keep value for ValueRange
+            return [None,
+                    self.dup() + self[2:]]
+
+        if self.cmp(b) < 0:
+            # keep value for ValueRange
+            return [self.dup() + self[2:],
+                    None]
+
+        # keep value for ValueRange
+        rst = [None, None]
+
+        if self.cmp_left(b[0]) < 0:
+            o = [self[0], b.prev_right()] + self[2:]
+            rst[0] = self.__class__(*o)
+
+        if b.cmp_right(self[1]) < 0:
+            o = [b.next_left(), self[1]] + self[2:]
+            rst[1] = self.__class__(*o)
 
         return rst
 
@@ -128,6 +156,9 @@ class ValueRange(list):
     def val(self):
         return self[2]
 
+    def set(self, v):
+        self[2] = v
+
 
 class Range(ValueRange):
 
@@ -137,7 +168,7 @@ class Range(ValueRange):
 
         if cmp_boundary(left, right) > 0:
             raise ValueError('left not smaller or equal right: {left}, {right}'.format(
-                left=left, right=right))
+                left=repr(left), right=repr(right)))
 
         super(ValueRange, self).__init__([left, right])
 
@@ -215,10 +246,22 @@ class RangeDict(list):
 
     default_range_clz = ValueRange
 
-    def __init__(self, iterable=None, range_clz=None):
+    # dimension = 1 indicates the value is a RangeDict whose value is any type.
+    # dimension = 2 indicates the value is a RangeDict thus to represent a 2D
+    # range dict.
+    dimension = 1
+
+    def __init__(self, iterable=None, range_clz=None, dimension=None):
 
         if iterable is None:
             iterable = []
+
+        if dimension is not None:
+            self.dimension = int(dimension)
+
+        if self.dimension < 1:
+            raise ValueError('dimension must >= 1, but: {d}'.format(
+                d=self.dimension))
 
         self.range_clz = range_clz or self.default_range_clz
 
@@ -234,7 +277,23 @@ class RangeDict(list):
                     ripp=self[i + 1],
                 ))
 
+        if self.dimension > 1:
+            for rng in self:
+                v = rng.val()
+                if v is not None:
+                    v = self.__class__(v,
+                                       range_clz=self.range_clz,
+                                       dimension=self.dimension-1)
+                    rng.set(v)
+
+
     def add(self, rng, val=None):
+
+        if (val is not None
+                and self.dimension > 1):
+
+            val = self.__class__(val, range_clz=self.range_clz,
+                                 dimension=self.dimension-1)
 
         rng = _to_range(self.range_clz, list(rng) + [val])
 
@@ -275,14 +334,21 @@ class RangeDict(list):
 
         self.normalize()
 
-    def get(self, pos):
+    def get(self, pos, *positions):
         rng = [pos, None]
         i = bisect_left(self, rng)
 
         if i == len(self) or not self[i].has(pos):
             raise KeyError('not in range: ' + repr(pos))
 
-        return self[i].val()
+        v = self[i].val()
+
+        if len(positions) > 0:
+            if len(positions) + 1 <= self.dimension:
+                v = v.get(*positions)
+            else:
+                raise TypeError('too many position to get')
+        return v
 
     def get_min(self, is_lt=None):
 
@@ -443,10 +509,10 @@ def substract(a, *bs):
 def _substract(a, b):
 
     if len(a) == 0:
-        return a.__class__([], range_clz=a.range_clz)
+        return a.__class__([], range_clz=a.range_clz, dimension=a.dimension)
 
     if len(b) == 0:
-        return a.__class__(a, range_clz=a.range_clz)
+        return a.__class__(a, range_clz=a.range_clz, dimension=a.dimension)
 
     rst = []
 
@@ -472,7 +538,7 @@ def _substract(a, b):
         if sb is not None:
             rst.append(sb)
 
-    return a.__class__(rst, range_clz=a.range_clz)
+    return a.__class__(rst, range_clz=a.range_clz, dimension=a.dimension)
 
 
 def intersect(a, b):
@@ -555,29 +621,7 @@ def union_range(a, b):
 
 
 def substract_range(a, b):
-
-    if a.cmp(b) > 0:
-        # keep value for ValueRange
-        return [None,
-                a.dup() + a[2:]]
-
-    if a.cmp(b) < 0:
-        # keep value for ValueRange
-        return [a.dup() + a[2:],
-                None]
-
-    # keep value for ValueRange
-    rst = [None, None]
-
-    if a.cmp_left(b[0]) < 0:
-        o = [a[0], b.prev_right()] + a[2:]
-        rst[0] = a.__class__(*o)
-
-    if b.cmp_right(a[1]) < 0:
-        o = [b.next_left(), a[1]] + a[2:]
-        rst[1] = a.__class__(*o)
-
-    return rst
+    return a.substract(b)
 
 
 def bisect_left(a, x, lo=0, hi=None):
@@ -603,7 +647,7 @@ def bisect_left(a, x, lo=0, hi=None):
 def assert_compatible(l, r):
     if not is_compatible(l, r):
         raise TypeError('{l} {ltyp} is incompatible with {r} {rtyp}'.format(
-            l=l, ltyp=type(l), r=r, rtyp=type(r)))
+            l=repr(l), ltyp=type(l), r=repr(r), rtyp=type(r)))
 
 
 def is_compatible(l, r):

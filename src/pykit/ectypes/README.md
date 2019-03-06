@@ -19,6 +19,7 @@
 - [Classes](#classes)
   - [ectypes.ReplicationConfig](#ectypesreplicationconfig)
   - [ectypes.IDBase](#ectypesidbase)
+    - [To declare a new ID type:](#to-declare-a-new-id-type)
   - [ectypes.IDCID](#ectypesidcid)
   - [ectypes.ServerID](#ectypesserverid)
   - [ectypes.local_server_id](#ectypeslocal_server_id)
@@ -299,6 +300,85 @@ IDBase(attr_1_value, attr_2_value, ...)
 IDBase(attr_1=value, attr_2=value, ...)
 ```
 
+### To declare a new ID type:
+
+```
+class MyID(IDBase):
+    _attrs = (
+        ('foo',    0,  1, str),
+        ('bar',    1,  2, str),
+        ('alias1', 1,  2, str, False),
+        ('alias2', 1,  2, str, {'key_attr': False}),
+    )
+
+    _str_len = 2
+
+    _tostr_fmt = '{foo}{bar}'
+```
+
+`_attr` defines what attribute to extract from input string.
+Here we have two attribute `foo` and `bar` and two **alias** attributes `alias1`
+and `alias2`.
+
+#### Non key-attribute
+
+To declare an alias attribute, add a fifth field as attribute options:
+`{'key_attr': False}` or just a `False` as shortcut.
+
+**Alias attribute does not need to present in constructor**.
+
+With the above definition, MyID can be created in the following ways:
+
+```
+MyID('12')
+MyID('1', '2')
+MyID('1', bar='2')
+MyID(foo='1', bar='2')
+```
+
+#### Self attribute
+
+To declare a **self** attribute, which reference the instance itself, use opt:
+`{'self': True}` or `'self'` as a shortcut.
+
+```
+class MyID(IDBase):
+    _attrs = (
+        ('foo',    0,  1, str),
+        ('me',     None,  None, None, 'self'),
+    _str_len = 1
+
+i = MyID('a')
+print i is i.me    # True
+print i is i.me.me # True
+```
+
+
+#### Embedded attribute
+
+To embed sub-attributes, use opt:
+`{'embed': True}` or `'embed'` as shortcut:
+
+```
+class SubID1(IDBase):
+    _attrs = (
+        ('one',  0,  1, lambda x: 1),
+    )
+    _str_len = 1
+
+
+class MyID(IDBase):
+    _attrs = (
+        ('foo',  0,  1, str),
+        ('sub',  1,  2, SubID1, 'embed'),
+    )
+    _str_len = 2
+
+i = MyID('ab')
+print i.sub.one     # 1
+print i.one         # 1
+```
+
 
 ##  ectypes.IDCID
 
@@ -356,15 +436,16 @@ print ectypes.ServerID.local_server_id('idc123')
 `ectypes.DriveID(server_id, mount_point_index)`
 
 A subclass of `IDBase`. Make a drive id, format: 16 chars
-`<server_id>0<mount_point_index>`
+`<server_id>0<mount_point_index><port>`
 
 **arguments**:
 
-    `server_id`:
+-   `server_id`:
     A string, Format: 18 chars of idc and primary MAC addr.
 
-    `mount_point_index`:
+-   `mount_point_index`:
     It is a 3-digit mount path, `001` for `/drives/001`.
+
 
 ```python
 from pykit import ectypes
@@ -372,6 +453,8 @@ from pykit import ectypes
 print ectypes.DriveID('idc000' 'aabbccddeeff', 10)
 # out: aabbccddeeff0010
 ```
+
+`DriveID` embeds `ServerID` attributes.
 
 
 ##  ectypes.BlockID
@@ -394,6 +477,9 @@ print bid.block_id_seq    # 1
 # test __str__()
 print bid                 # d0g0006300000001230101idc000c62d8736c72800020000000001
 ```
+
+`BlockID` embeds `DriveID` attributes.
+
 
 ### block id
 

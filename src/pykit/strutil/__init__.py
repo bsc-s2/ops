@@ -1,19 +1,22 @@
 from .strutil import (
     common_prefix,
     format_line,
+    page,
     line_pad,
+    parse_colon_kvs,
     tokenize,
     break_line,
 
-    ColoredString,
-    colorize,
     struct_repr,
     format_table,
     filter_invisible_chars,
     utf8str,
 )
 
-from .strutil import (
+from .colored_string import (
+    ColoredString,
+    colorize,
+
     blue,
     cyan,
     green,
@@ -31,6 +34,10 @@ from .strutil import (
     fading_color,
 )
 
+from .hex import (
+    Hex
+)
+
 from .trie import (
     TrieNode,
     make_trie,
@@ -40,7 +47,9 @@ from .trie import (
 __all__ = [
     'common_prefix',
     'format_line',
+    'page',
     'line_pad',
+    'parse_colon_kvs',
     'tokenize',
     'break_line',
 
@@ -62,6 +71,8 @@ __all__ = [
     'danger',
 
     'fading_color',
+
+    'Hex',
 
     'struct_repr',
     'format_table',

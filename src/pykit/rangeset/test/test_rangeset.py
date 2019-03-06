@@ -1,3 +1,6 @@
+#!/usr/bin/env python2
+# coding: utf-8
+
 import logging
 import unittest
 
@@ -27,6 +30,7 @@ class TestRange(unittest.TestCase):
                 ([1,    None], 0, False),
                 ([1,    None], 1, True),
                 ([1,    None], 2, True),
+                ([1,    1],    1, False),
                 ([1,    3],    0, False),
                 ([1,    3],    1, True),
                 ([1,    3],    2, True),
@@ -141,10 +145,18 @@ class TestRange(unittest.TestCase):
             a = rangeset.Range(*a)
             b = rangeset.Range(*b)
 
+            # test module method
             rst = rangeset.substract_range(a, b)
             dd('rst:', rst)
 
             self.assertEqual(expected, rst)
+
+            # test class method
+            rst = a.substract(b)
+            dd('rst:', rst)
+
+            self.assertEqual(expected, rst)
+
 
     def test_intersect(self):
 
@@ -196,6 +208,7 @@ class TestRange(unittest.TestCase):
             ([None, ()], inf),
             ([None, []], inf),
 
+            ([1, 1], 0),
             ([1, 2], 1),
             ([1.0, 2.2], 1.2),
             (['', '\0'], 1.0/257),
@@ -231,6 +244,42 @@ class TestRange(unittest.TestCase):
         for rng, expected in cases:
             rst = rangeset.ValueRange(*rng)
             self.assertEqual(expected, rst.val())
+
+    def test_unicode(self):
+
+        # fix: https://github.com/bsc-s2/pykit/issues/430
+
+        # valid unicode range
+        cases = (
+            [u'我', None, 0],
+            [None, u'我', 0],
+            [u'它', u'我', 0],
+        )
+
+        for rng in cases:
+            r = rangeset.ValueRange(*rng)
+
+        # left > right
+        cases = (
+            [u'我a', u'我', 0],
+        )
+
+        for rng in cases:
+            self.assertRaises(ValueError, rangeset.ValueRange, *rng)
+
+        # incompatible
+        cases = (
+            [u'我', '我', 0],
+            [u'我', 0, 0],
+            [u'我', 0.0, 0],
+            [u'我', (), 0],
+            [u'我', [], 0],
+            [u'我', {}, 0],
+        )
+
+        for l, r, v in cases:
+            self.assertRaises(TypeError, rangeset.ValueRange, l, r, v)
+            self.assertRaises(TypeError, rangeset.ValueRange, r, l, v)
 
 
 class TestRangeSet(unittest.TestCase):
@@ -935,3 +984,88 @@ class TestRangeDict(unittest.TestCase):
             self.assertEqual(expected, a.find_overlapped(b))
             self.assertEqual(expected, a.find_overlapped(rangeset.Range(*b)))
             self.assertEqual(expected, a.find_overlapped(rangeset.ValueRange(*(b+['bar']))))
+
+
+class TestRangeDictMultiDimension(unittest.TestCase):
+
+    """
+    A sample of 2d mapped value: time(t) and a string range:
+    This setting split the entire plain into 4 areas.
+
+        range
+        ^
+        |
+      d +----+----+
+        |    | cd |
+      c + bd +----+
+        |    |    |
+      b +----+    |
+        | ab | ac |
+      a +----+----+
+        |
+     '' +----+----+--------> t
+        0    1    2
+    """
+
+    inp = [
+        [0, 1, [['a', 'b', 'ab'],
+                ['b', 'd', 'bd'],
+                ]],
+        [1, 2, [['a', 'c', 'ac'],
+                ['c', 'd', 'cd'],
+                ]],
+    ]
+
+    def test_get(self):
+
+        r = rangeset.RangeDict(self.inp, dimension=2)
+
+        cases = (
+            (0.5, 'a', 'ab'),
+            (0.5, 'c', 'bd'),
+            (1.5, 'a', 'ac'),
+            (1.5, 'c', 'cd'),
+        )
+
+        for tm, string, expected in cases:
+
+            dd(tm, string, expected)
+
+            rst = r.get(tm).get(string)
+            dd('rst:', rst)
+
+            self.assertEqual(expected, rst)
+
+            # in one get
+
+            rst = r.get(tm, string)
+            dd('rst:', rst)
+
+            self.assertEqual(expected, rst)
+
+        # too many args
+        self.assertRaises(TypeError, r.get, 1, 'a', 1)
+
+    def test_add(self):
+        r = rangeset.RangeDict(self.inp, dimension=2)
+        r.add([2, None], [['a', 'd', 'ad']])
+
+        rst = r.get(2.5, 'b')
+        self.assertEqual('ad', rst)
+
+        self.assertRaises(KeyError, r.get, 2.5, 'e')
+
+    def test_substract(self):
+        r = rangeset.RangeDict(self.inp, dimension=2)
+        r = rangeset.substract(r, rangeset.RangeDict([[0.5, 1.5, None]]))
+        dd(r)
+
+        self.assertRaises(KeyError, r.get, 2)
+        self.assertRaises(KeyError, r.get, 2, 'e')
+
+        self.assertEqual('bd', r.get(0, 'b'))
+        self.assertEqual('ac', r.get(1.6, 'b'))
+
+        r = rangeset.substract(r, rangeset.RangeDict([[0, 1.5, None]]))
+        dd(r)
+        self.assertRaises(KeyError, r.get, 0)
