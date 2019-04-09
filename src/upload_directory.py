@@ -199,7 +199,8 @@ def get_files_to_upload(dir_name, progress_file):
         line = fd.readline()
         if line == '':
             break
-        file_name = line.split()[0]
+
+        file_name = line.split()[0].decode('utf-8')
         if file_name in files_to_upload:
             files_to_upload.pop(file_name)
 
