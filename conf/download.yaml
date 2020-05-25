@@ -36,7 +36,7 @@ TIME_ZONE: 28800
 DOWNLOAD_BASE_DIR: '/root/download_directory'
 
 # 日志存放目录，日志文件命名规则：download-log-for-<bucket name>.log
-LOG_DIR: '/tmp/download_directory'
+LOG_DIR: '/tmp/'
 
 # 限制下载的带宽使用，单位MB
 BANDWIDTH: 5
@@ -53,3 +53,5 @@ ENABLE_SCHEDULE: false
 # 程序运行的时间点
 SCHEDULE_START: '23:25'
 SCHEDULE_STOP: '2:30'
+
+file_path: '/root/work/workspace/ops/src/list.out'
