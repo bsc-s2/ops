@@ -19,6 +19,8 @@ import yaml
 from botocore.client import Config
 
 from pykit import jobq
+from pykit import http
+from pykit import awssign
 
 report_state_lock = threading.RLock()
 
@@ -341,6 +343,46 @@ def compare_file(result, th_status):
     return True
 
 
+def upload_file(resp_object, result):
+    uri = '/%s/%s' % (cnf['BAISHAN_BUCKET_NAME'], result['s3_key'])
+    verb = 'PUT'
+    headers = {
+        'Content-Length': resp_object.content_length,
+        'Host': cnf['BAISHAN_ENDPOINT'][7:]
+    }
+
+    request = {
+        'verb': verb,
+        'uri': uri,
+        'headers': headers,
+    }
+    sign = awssign.Signer(cnf['BAISHAN_ACCESS_KEEY'], cnf['BAISHAN_SECRET_KEY'])
+    sign.add_auth(request, query_auth=False, expires=120)
+
+    cli = http.Client(cnf['BAISHAN_ENDPOINT'][7:], port=80)
+    cli.send_request(request['uri'], verb, request['headers'])
+
+    send_size = 0
+    start_time = time.time()
+    while True:
+        buf = resp_object.read(1024 * 1024)
+        if buf == '':
+            break
+
+        cli.send_body(buf)
+        send_size += 1024 * 1024
+        end_time = time.time()
+
+    expect_time = send_size / cnf['SYNC_SPEED']
+    act_time = end_time - start_time
+    time_diff = expect_time - act_time
+    if time_diff > 0:
+        time.sleep(time_diff)
+
+    cli.read_response()
+    cli.status == 200
+
+
 def pipe_file(result, th_status):
     result['piped'] = True
     th_status['piped_n'] = th_status.get('piped_n', 0) + 1
@@ -355,7 +397,7 @@ def pipe_file(result, th_status):
             file_object.key, progress_callback=update_pipe_progress)
 
         ali_file_info = validate_and_extract_ali_file_info(resp_object, result)
-        if ali_file_info == None:
+        if ali_file_info is None:
 
             result['pipe_failed'] = True
             th_status['pipe_failed_n'] = th_status.get('pipe_failed_n', 0) + 1
@@ -498,7 +540,7 @@ def update_sync_stat(result):
         elif 'default_not_override' in result:
             ali_sync_state['default_not_override'] += 1
 
-    if not 'piped' in result:
+    if 'piped' not in result:
         return
 
     ali_sync_state['piped'] += 1
@@ -528,7 +570,7 @@ def update_sync_stat(result):
     ali_sync_state['pipe_succeed'] += 1
     ali_sync_state['pipe_succeed_bytes'] += file_object.size
 
-    if not 'compared' in result:
+    if 'compared' not in result:
         return
 
     if 'compare_failed' in result:
