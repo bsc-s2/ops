@@ -346,9 +346,16 @@ def compare_file(result, th_status):
 def upload_file(resp_object, result):
     uri = '/%s/%s' % (cnf['BAISHAN_BUCKET_NAME'], result['s3_key'])
     verb = 'PUT'
+
+    endpoint = cnf['BAISHAN_ENDPOINT']
+    if 'http://' in endpoint:
+        Host = endpoint[len('http://'):]
+    else:
+        Host = endpoint[len('https://'):]
+
     headers = {
         'Content-Length': resp_object.content_length,
-        'Host': cnf['BAISHAN_ENDPOINT'][7:]
+        'Host': Host,
     }
 
     request = {
@@ -356,31 +363,30 @@ def upload_file(resp_object, result):
         'uri': uri,
         'headers': headers,
     }
+
     sign = awssign.Signer(cnf['BAISHAN_ACCESS_KEEY'], cnf['BAISHAN_SECRET_KEY'])
     sign.add_auth(request, query_auth=False, expires=120)
 
-    cli = http.Client(cnf['BAISHAN_ENDPOINT'][7:], port=80)
+    cli = http.Client(Host, port=80)
     cli.send_request(request['uri'], verb, request['headers'])
 
     send_size = 0
-    start_time = time.time()
     while True:
+        start_time = time.time()
         buf = resp_object.read(1024 * 1024)
-        if buf == '':
-            break
+        end_time = time.time()
+        expect_time = send_size / cnf['SYNC_SPEED']
+        act_time = end_time - start_time
+        time_diff = expect_time - act_time
+
+        if time_diff > 0:
+            time.sleep(time_diff)
 
         cli.send_body(buf)
         send_size += 1024 * 1024
-        end_time = time.time()
 
-    expect_time = send_size / cnf['SYNC_SPEED']
-    act_time = end_time - start_time
-    time_diff = expect_time - act_time
-    if time_diff > 0:
-        time.sleep(time_diff)
-
-    cli.read_response()
-    cli.status == 200
+        if buf == '':
+            break
 
 
 def pipe_file(result, th_status):
@@ -391,6 +397,7 @@ def pipe_file(result, th_status):
         th_status['pipe_progress'] = (done_bytes, total_bytes)
 
     file_object = result['file_object']
+    upload_file(file_object, result)
 
     try:
         resp_object = oss2_bucket.get_object(
@@ -739,7 +746,7 @@ def sync():
     try:
         report_sess = {'stop': False}
         report_th = _thread(report, (report_sess,))
-        jobq.run(iter_files(), [(sync_one_file, 3),
+        jobq.run(iter_files(), [(sync_one_file, cnf['THREADS_NUM_FOR_SYNC']),
                                 (update_sync_stat, 1),
                                 ])
 
