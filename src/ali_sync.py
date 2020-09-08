@@ -371,22 +371,23 @@ def upload_file(resp_object, result):
     cli.send_request(request['uri'], verb, request['headers'])
 
     send_size = 0
+    start_time = time.time()
     while True:
-        start_time = time.time()
         buf = resp_object.read(1024 * 1024)
-        end_time = time.time()
-        expect_time = send_size / cnf['SYNC_SPEED']
-        act_time = end_time - start_time
-        time_diff = expect_time - act_time
+        if buf == '':
+            break
 
-        if time_diff > 0:
-            time.sleep(time_diff)
+        end_time = time.time()
+        if cnf['SYNC_SPEED'] is not None:
+            expect_time = send_size / cnf['SYNC_SPEED']
+            act_time = end_time - start_time
+            time_diff = expect_time - act_time
+
+            if time_diff > 0:
+                time.sleep(time_diff)
 
         cli.send_body(buf)
         send_size += 1024 * 1024
-
-        if buf == '':
-            break
 
 
 def pipe_file(result, th_status):
@@ -397,7 +398,6 @@ def pipe_file(result, th_status):
         th_status['pipe_progress'] = (done_bytes, total_bytes)
 
     file_object = result['file_object']
-    upload_file(file_object, result)
 
     try:
         resp_object = oss2_bucket.get_object(
@@ -410,14 +410,7 @@ def pipe_file(result, th_status):
             th_status['pipe_failed_n'] = th_status.get('pipe_failed_n', 0) + 1
             return False
 
-        extra_args = {
-            'ACL': cnf['FILE_ACL'],
-            'ContentType': ali_file_info['content_type'],
-            'Metadata': ali_file_info['meta'],
-        }
-        s3_client.upload_fileobj(resp_object, cnf['BAISHAN_BUCKET_NAME'],
-                                 result['s3_key'], ExtraArgs=extra_args)
-
+        upload_file(resp_object, result)
         result['pipe_succeed'] = True
         th_status['pipe_succeed_n'] = th_status.get('pipe_succeed_n', 0) + 1
 
