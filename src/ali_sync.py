@@ -360,22 +360,15 @@ def upload_file(resp_object, result, ali_file_info):
     else:
         Host = endpoint
 
-    extra_args = {
-        'ACL': cnf['FILE_ACL'],
-        'ContentType': ali_file_info['content_type'],
-        'Metadata': ali_file_info['meta'],
-    }
-
-    for k, v in extra_args['Metadata'].items():
-        extra_args['Metadata'] = v
-
     headers = {
         'Content-Length': resp_object.content_length,
         'Host': Host,
-        'x-amz-acl': extra_args['ACL'],
-        'Content-Type': extra_args['ContentType'],
-        'x-amz-meta-k': extra_args['Metadata'],
+        'x-amz-acl': cnf['FILE_ACL'],
+        'Content-Type': ali_file_info['content_type'],
     }
+
+    for k, v in ali_file_info['meta'].items():
+        headers['x-amz-meta-' + k] = v
 
     request = {
         'verb': verb,
