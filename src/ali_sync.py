@@ -1,6 +1,7 @@
 #!/usr/bin/env python2
 # coding:utf-8
 
+import ssl
 import base64
 import copy
 import errno
@@ -343,19 +344,37 @@ def compare_file(result, th_status):
     return True
 
 
-def upload_file(resp_object, result):
+def upload_file(resp_object, result, ali_file_info):
     uri = '/%s/%s' % (cnf['BAISHAN_BUCKET_NAME'], result['s3_key'])
     verb = 'PUT'
 
     endpoint = cnf['BAISHAN_ENDPOINT']
+    https_ctx = None
+    port = 80
     if 'http://' in endpoint:
         Host = endpoint[len('http://'):]
-    else:
+    elif 'https://' in endpoint:
         Host = endpoint[len('https://'):]
+        https_ctx = ssl._create_unverified_context()
+        port = 443
+    else:
+        Host = endpoint
+
+    extra_args = {
+        'ACL': cnf['FILE_ACL'],
+        'ContentType': ali_file_info['content_type'],
+        'Metadata': ali_file_info['meta'],
+    }
+
+    for k, v in extra_args['Metadata'].items():
+        extra_args['Metadata'] = v
 
     headers = {
         'Content-Length': resp_object.content_length,
         'Host': Host,
+        'x-amz-acl': extra_args['ACL'],
+        'Content-Type': extra_args['ContentType'],
+        'x-amz-meta-k': extra_args['Metadata'],
     }
 
     request = {
@@ -364,10 +383,10 @@ def upload_file(resp_object, result):
         'headers': headers,
     }
 
-    sign = awssign.Signer(cnf['BAISHAN_ACCESS_KEEY'], cnf['BAISHAN_SECRET_KEY'])
+    sign = awssign.Signer(cnf['BAISHAN_ACCESS_KEY'], cnf['BAISHAN_SECRET_KEY'])
     sign.add_auth(request, query_auth=False, expires=120)
 
-    cli = http.Client(Host, port=80)
+    cli = http.Client(Host, port=port, https_context=https_ctx)
     cli.send_request(request['uri'], verb, request['headers'])
 
     send_size = 0
@@ -410,7 +429,8 @@ def pipe_file(result, th_status):
             th_status['pipe_failed_n'] = th_status.get('pipe_failed_n', 0) + 1
             return False
 
-        upload_file(resp_object, result)
+        upload_file(resp_object, result, ali_file_info)
+
         result['pipe_succeed'] = True
         th_status['pipe_succeed_n'] = th_status.get('pipe_succeed_n', 0) + 1
 
