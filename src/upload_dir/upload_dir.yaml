@@ -1,0 +1,26 @@
+# 上传的目录
+src_dir: ''
+
+# 白山云存储的bucket
+bucket: ''
+
+# 白山云存储的accesskey
+accesskey: ''
+
+# 白山云存储的secretkey
+secretkey: ''
+
+# 上传到白山云存储的前缀
+prefix: 'test/'
+
+# 需要忽略文件的正则表达式
+ignore: ''
+
+# 保持上传文件的目录结构
+keep_path: true
+
+# 覆盖同名文件
+overwrite: false
+
+# 并发上传数量
+thread_count: 10
