@@ -13,6 +13,7 @@ from kazoo.exceptions import NoNodeError
 
 from pykit import zkutil
 from pykit import utfjson
+from pykit import config
 
 from .exceptions import ConnectionLoss
 from .exceptions import Deadlock
@@ -30,8 +31,6 @@ from .zkstorage import ZKStorage
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TIMEOUT = 1 * 365 * 24 * 3600
-
 
 class TXRecord(object):
 
@@ -44,16 +43,28 @@ class TXRecord(object):
     def __str__(self):
         return '{k}={v}; ver={ver}'.format(k=self.k, v=self.v, ver=self.version)
 
+    def to_dict(self):
+        return {
+            'k': self.k,
+            'v': self.v,
+            'version': self.version,
+            'values': self.values,
+        }
+
+    @classmethod
+    def from_dict(clz, rec):
+        return clz(rec['k'], rec['v'], rec['version'], rec['values'])
+
 
 class ZKTransaction(object):
 
-    def __init__(self, zk, txid=None, timeout=DEFAULT_TIMEOUT, lock_timeout=None):
+    def __init__(self, zk, txid=None, timeout=None, lock_timeout=300, zk_owner=None):
 
         # Save the original arg for self.run()
         self._zk = zk
 
         self.zke, self.owning_zk = zkutil.kazoo_client_ext(zk)
-        self.timeout = timeout
+        self.timeout = timeout or getattr(config, "zk_tx_timeout")
         self.lock_timeout = lock_timeout
 
         self.txid = txid
@@ -62,6 +73,7 @@ class ZKTransaction(object):
 
         # User locked and required keys
         self.got_keys = {}
+        self.got_keys_ver = {}
         # Keys user need to commit
         self.modifications = {}
 
@@ -75,6 +87,12 @@ class ZKTransaction(object):
 
         self.zke.add_listener(self._on_conn_change)
 
+        self.start_ts = time.time()
+
+        self.mem_state = None
+
+        self.zk_owner = zk_owner
+
     def _on_conn_change(self, state):
 
         logger.debug('state changed: {state}'.format(state=state,))
@@ -84,6 +102,7 @@ class ZKTransaction(object):
                 self.connected = False
 
     def lock_get(self, key, blocking=True, latest=True, timeout=None):
+        self._assert_connected()
 
         # We use persistent lock(ephemeral=False)
         # thus we do not need to care about connection loss during locking
@@ -97,9 +116,9 @@ class ZKTransaction(object):
             return copy.deepcopy(self.got_keys[key])
 
         if blocking:
-            self.lock_key(key, timeout)
+            locked, txid, lock_val, lock_ver = self.lock_key(key, timeout)
         else:
-            locked, other_txid, ver = self.try_lock_key(key)
+            locked, txid, lock_val, lock_ver = self.try_lock_key(key)
             if not locked:
                 return None
 
@@ -108,6 +127,14 @@ class ZKTransaction(object):
 
         curr = TXRecord(k=key, v=copy.deepcopy(lvalue), version=version, values=val)
         self.got_keys[key] = curr
+
+        self.got_keys_ver[key] = lock_ver
+
+        if lock_val is not None:
+            self.modifications[key] = TXRecord.from_dict(lock_val)
+
+            if latest:
+                return copy.deepcopy(self.modifications[key])
 
         rec = TXRecord(k=key, v=copy.deepcopy(lvalue), version=version, values=val)
         return rec
@@ -125,19 +152,59 @@ class ZKTransaction(object):
         del self.got_keys[rec.k]
 
     def set(self, rec):
+        self._assert_connected()
+
         logger.info('{tx} tx.set: {rec}'.format(tx=self, rec=rec))
+        if rec.k not in self.got_keys:
+            raise NotLocked(
+                "Not allowed to set non-locked: {k}".format(k=rec.k))
+
         self.modifications[rec.k] = rec
 
-    def set_state(self, state_data):
+        lock_ver = self.got_keys_ver[rec.k]
+
+        lock_ver = self.zkstorage.set_lock_key_val(
+            self.txid, rec.k, rec.to_dict(), lock_ver)
+
+        self.got_keys_ver[rec.k] = lock_ver
+
+    def set_mem_state(self, state_data):
+        self._assert_connected()
+
         txst = {
             'got_keys': self.got_keys.keys(),
+            "start_ts": self.start_ts,
+            'data': state_data,
+        }
+
+        logger.info('{tx} tx.set_mem_state: {txst}'.format(tx=self, txst=txst))
+
+        self.mem_state = txst
+
+    def get_mem_state(self):
+        if self.mem_state is None:
+            return None
+
+        return self.mem_state['data']
+
+    def has_mem_state(self):
+        return self.get_mem_state is not None
+
+    def delete_mem_state(self):
+        self.mem_state = None
+
+    def set_state(self, state_data):
+        self._assert_connected()
+
+        txst = {
+            'got_keys': self.got_keys.keys(),
+            "start_ts": self.start_ts,
             'data': state_data,
         }
 
         self.zkstorage.state.set_or_create(self.txid, txst)
 
     def get_state(self, txid=None):
-
         txst, ver = self._get_state(txid=txid)
         if txst is None:
             return None
@@ -165,29 +232,35 @@ class ZKTransaction(object):
             pass
 
     def lock_key(self, key, timeout):
+        self._assert_connected()
 
         try:
-            self._lock_key(key, timeout)
+            return self._lock_key(key, timeout)
         except zkutil.LockTimeout:
             raise TXTimeout('{tx} timeout waiting for lock: {key}'.format(tx=self, key=key))
 
         logger.info('{tx} [{key}] locked'.format(tx=self, key=key))
 
     def try_lock_key(self, key):
+        self._assert_connected()
 
         while True:
-            other_txid, ver = None, None
-            for other_txid, ver in self.zkstorage.acquire_key_loop(
+            other_txid, other_val, ver = [None] * 3
+            for other_holder, ver in self.zkstorage.acquire_key_loop(
                     self.txid, key, timeout=-1):
+
+                other_txid = other_holder['id']
+                other_val = other_holder['val']
+
                 # Run only once if not locked.
                 # Does no reach here if locked.
                 break
 
-            if other_txid is None:
-                return True, self.txid, -1
+            if other_txid == self.txid:
+                return True, other_txid, other_val, ver
 
             if self.is_tx_alive(other_txid) or self.has_state(other_txid):
-                return False, other_txid, ver
+                return False, other_txid, other_val, ver
 
             self.zkstorage.try_release_key(other_txid, key)
 
@@ -201,13 +274,30 @@ class ZKTransaction(object):
 
         expire_at = time.time() + timeout
 
+        txid, txval, ver = [None] * 3
+
         def _time_left():
             return expire_at - time.time()
 
-        for other_txid, ver in self.zkstorage.acquire_key_loop(
+        for other_holder, ver in self.zkstorage.acquire_key_loop(
                 self.txid, key, timeout=_time_left()):
 
-            logger.info('{tx} wait[{key}]-> {other_txid} ver: {ver}'.format(
+            # self.txid < other_txid:
+            # I am an earlier tx. I should run first.
+            #
+            # If there is no deadlock:
+            #   the older tx will finish later. Then I wait.
+            #
+            # If there is a deadlock:
+            #   the older tx will abort.
+
+            other_txid = other_holder['id']
+            other_val = other_holder['val']
+
+            if other_txid == self.txid:
+                return True, self.txid, other_val, ver
+
+            logger.info('my tx: {tx} wait [{key}] locked by other txid: {other_txid} ver: {ver}'.format(
                 tx=self, key=key, other_txid=txidstr(other_txid), ver=ver))
 
             # A tx that has state saved is recoverable, is treated as alive tx.
@@ -218,7 +308,7 @@ class ZKTransaction(object):
                 self.zkstorage.try_release_key(other_txid, key)
                 continue
 
-            logger.info('{tx}: other tx {other_txid} is alive'.format(
+            logger.info('other txid: {other_txid} is alive'.format(
                 tx=self, other_txid=txidstr(other_txid)))
 
             if self.txid > other_txid:
@@ -226,11 +316,10 @@ class ZKTransaction(object):
                 if len(self.got_keys) == 0:
 
                     # no locking, no deadlock
-                    logger.info('{tx} wait[{key}]-> {other_txid} no-lock'.format(
+                    logger.info('my tx: {tx} wait[{key}]-> {other_txid} no-lock'.format(
                         tx=self, key=key, other_txid=txidstr(other_txid)))
 
-                    for i in range(other_txid, self.txid):
-                        self.wait_tx_to_finish(i, _time_left())
+                    self.wait_tx_to_finish(other_txid, _time_left())
                     continue
 
                 else:
@@ -241,27 +330,19 @@ class ZKTransaction(object):
 
                     self.release_all_key_locks()
                     self.delete_state(self.txid)
+                    self.delete_mem_state()
 
                     for i in range(other_txid, self.txid):
                         self.wait_tx_to_finish(i, _time_left())
 
-                    raise Deadlock('my txid: {mytxid} lockholder txid: {other_txid}'.format(
-                        mytxid=self.txid, other_txid=other_txid))
+                    raise Deadlock('my txid: {mytxid} key: {key} locked by txid: {other_txid}'.format(
+                        mytxid=self.txid, key=key, other_txid=other_txid))
 
-            # self.txid < other_txid:
-            # I am an earlier tx. I should run first.
-            #
-            # If there is no deadlock:
-            #   the older tx will finish later. Then I wait.
-            #
-            # If there is a deadlock:
-            #   the older tx will abort.
-            logger.info('{tx} wait[{key}]-> {other_txid}'.format(
-                tx=self, key=key, other_txid=txidstr(other_txid)))
+        raise NotLocked("key: {k}".format(k=key))
 
     def wait_tx_to_finish(self, txid, timeout):
 
-        logger.info('{tx} wait-> {other_txid}'.format(tx=self, other_txid=txidstr(txid)))
+        logger.info('{tx} wait-> {other_txid} finish'.format(tx=self, other_txid=txidstr(txid)))
 
         try:
             zkutil.wait_absent(self.zke,
@@ -287,7 +368,7 @@ class ZKTransaction(object):
 
         assert self.expire_at is None
 
-        self.expire_at = time.time() + self.timeout
+        self.expire_at = self.start_ts + self.timeout
 
         if self.txid is None:
 
@@ -303,15 +384,36 @@ class ZKTransaction(object):
         zkconf = copy.deepcopy(self.zke._zkconf.conf)
         zkconf['lock_dir'] = self.zke._zkconf.tx_alive()
 
+        identifier = None
+        if self.zk_owner is not None:
+            identifier = {
+                'id': zkutil.lock_id(self.zke._zkconf.node_id()),
+                'val': {'zk_owner': self.zk_owner},
+            }
+
         self.tx_alive_lock = zkutil.ZKLock(self.txid,
                                            zkconf=zkconf,
                                            zkclient=self.zke,
+                                           identifier=identifier,
                                            timeout=self.expire_at-time.time())
 
         try:
             self.tx_alive_lock.acquire()
         except zkutil.LockTimeout as e:
             raise TXTimeout(repr(e) + ' while waiting for tx alive lock')
+
+        state, ver = self._get_state(self.txid)
+        if state is not None:
+            if "start_ts" in state:
+                self.start_ts = state["start_ts"]
+                self.expire_at = self.start_ts + self.timeout
+
+            if 'got_keys' in state:
+                for key in state['got_keys']:
+                    self.lock_get(key, latest=False)
+
+        if self.time_left() < 0:
+            raise TXTimeout('{tx} timeout when begin'.format(tx=self))
 
     def commit(self, force=False):
 
@@ -357,7 +459,8 @@ class ZKTransaction(object):
             kazootx.delete(cnf.tx_state(self.txid), version=ver)
 
         for key in self.got_keys:
-            kazootx.delete(cnf.lock(key), version=0)
+            ver = self.got_keys_ver[key]
+            kazootx.delete(cnf.lock(key), version=ver)
 
         if len(jour) > 0 or force:
             # provide a str "journal_id", because
@@ -367,21 +470,28 @@ class ZKTransaction(object):
                            utfjson.dump(jour),
                            acl=cnf.kazoo_digest_acl(),
                            sequence=True)
+
+            kazootx.check(self.tx_alive_lock.lock_path, self.tx_alive_lock.lock_holder[1])
+
             rst = kazootx.commit()
             for r in rst:
                 if isinstance(r, KazooException):
                     raise CommitError(rst)
 
             status = COMMITTED
-            journal_id = rst[-1].split('/')[-1][-10:]
+            journal_id = rst[-2].split('/')[-1][-10:]
             self.zkstorage.add_to_journal_id_set(status, journal_id)
         else:
+            kazootx.check(self.tx_alive_lock.lock_path, self.tx_alive_lock.lock_holder[1])
+
             # Nothing to commit, make it an aborted tx.
             kazootx.commit()
             status = PURGED
 
         self.tx_status = status
+
         self.modifications = {}
+
         self._close()
 
     def abort(self):
@@ -393,9 +503,12 @@ class ZKTransaction(object):
     def time_left(self):
         return self.expire_at - time.time()
 
-    def _close(self):
+    def _close(self, release_got_keys=True):
 
-        self.release_all_key_locks()
+        self.delete_mem_state()
+
+        if release_got_keys:
+            self.release_all_key_locks()
 
         if self.tx_alive_lock is not None:
 
@@ -448,6 +561,7 @@ class ZKTransaction(object):
         logger.info('{tx} __exit__ errtype:{errtype} errval:{errval}'.format(
             tx=self, errtype=errtype, errval=errval))
 
+        release_got_keys = False
         try:
             if self.tx_status is None:
 
@@ -455,10 +569,10 @@ class ZKTransaction(object):
                     has = self.has_state(self.txid)
                     if has:
                         self.tx_status = PAUSED
-                        self.got_keys = {}
 
                     else:
                         self.tx_status = PURGED
+                        release_got_keys = True
                 except (exceptions.ConnectionClosedError,
                         exceptions.ConnectionLoss) as e:
 
@@ -474,21 +588,22 @@ class ZKTransaction(object):
             if isinstance(errval, UserAborted):
                 if self.txid is not None:
                     self.delete_state(self.txid)
+                    release_got_keys = True
 
             return False
 
         finally:
-            self._close()
+            self._close(release_got_keys)
 
     def __str__(self):
         return '{tx}[{locked}]'.format(tx=txidstr(self.txid),
                                        locked=','.join(sorted(self.got_keys.keys())))
 
 
-def run_tx(zk, func, txid=None, timeout=None, lock_timeout=None, args=(), kwargs=None):
+def run_tx(zk, func, txid=None, timeout=None, lock_timeout=300, args=(), kwargs=None, zk_owner=None):
 
     if timeout is None:
-        timeout = DEFAULT_TIMEOUT
+        timeout = getattr(config, "zk_tx_timeout")
 
     if kwargs is None:
         kwargs = {}
@@ -497,7 +612,7 @@ def run_tx(zk, func, txid=None, timeout=None, lock_timeout=None, args=(), kwargs
 
     while True:
 
-        tx = ZKTransaction(zk, timeout=expire_at - time.time(), lock_timeout=lock_timeout, txid=txid)
+        tx = ZKTransaction(zk, timeout=expire_at - time.time(), lock_timeout=lock_timeout, txid=txid, zk_owner=zk_owner)
         txid = None
 
         try:

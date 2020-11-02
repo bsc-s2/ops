@@ -3,6 +3,7 @@
 
 import copy
 import unittest
+import time
 
 from pykit import utfjson
 from pykit import ututil
@@ -76,6 +77,8 @@ class TestBlockGroup(unittest.TestCase):
                                     DriveID('idc000' 'c62d8736c7280002'), 1),
             'size': 1000,
             'range': ['0a', '0b'],
+            'ts_range': None,
+            'ref_num': 1,
             'is_del': 0
         })
 
@@ -126,10 +129,10 @@ class TestBlockGroup(unittest.TestCase):
     def test_get_block(self):
         g = BlockGroup(block_group_id='g000640000000123', idcs=['a', 'b', 'c'], config=_ec_config)
 
-        block = g.get_block('0000')
+        block = g.get_block('0000', raise_error=False)
         self.assertIsNone(block)
 
-        block = g.get_block('9999')
+        block = g.get_block('9999', raise_error=False)
         self.assertIsNone(block)
 
         with self.assertRaises(BlockNotFoundError):
@@ -149,25 +152,70 @@ class TestBlockGroup(unittest.TestCase):
         g = BlockGroup(block_group_id='g000640000000123', idcs=['a', 'b', 'c'], config=_ec_config)
 
         g.add_block(self.foo_block)
-        g.mark_delete_block('0000')
-        block = g.get_block('0000')
 
-        self.assertEqual(1, block['is_del'])
+        self.foo_block.add_ref()
+        self.assertEqual(2, self.foo_block['ref_num'])
+        self.assertEqual(0, self.foo_block['is_del'])
+
+        del_blk = g.mark_delete_block('0000')
+        self.assertIsNone(del_blk)
+        self.assertEqual(1, self.foo_block['ref_num'])
+        self.assertEqual(0, self.foo_block['is_del'])
+
+        del_blk = g.mark_delete_block('0000')
+        self.assertEqual(del_blk['ref_num'], 0)
+        self.assertEqual(1, del_blk['is_del'])
+        self.assertDictEqual(del_blk, g.get_block('0000'))
+
+        self.assertTrue(int(time.time()) - del_blk["mtime"] < 3)
         self.assertRaises(BlockNotFoundError, g.mark_delete_block, '9999')
+
+    def test_mark_delete_block_byid(self):
+        g = BlockGroup(block_group_id='g000640000000123', idcs=['a', 'b', 'c'], config=_ec_config)
+
+        g.add_block(self.foo_block)
+
+        self.foo_block.add_ref()
+        self.assertEqual(2, self.foo_block['ref_num'])
+        self.assertEqual(0, self.foo_block['is_del'])
+
+        del_blk = g.mark_delete_block_byid(self.foo_block['block_id'])
+        self.assertIsNone(del_blk)
+        self.assertEqual(1, self.foo_block['ref_num'])
+        self.assertEqual(0, self.foo_block['is_del'])
+
+        self.assertDictEqual(self.foo_block, g.get_block_byid(self.foo_block['block_id']))
+
+        del_blk = g.mark_delete_block_byid(self.foo_block['block_id'])
+        self.assertEqual(del_blk['ref_num'], 0)
+        self.assertEqual(1, del_blk['is_del'])
+        self.assertDictEqual(del_blk, g.get_block_byid(self.foo_block['block_id']))
+
+        self.assertTrue(int(time.time()) - del_blk["mtime"] < 3)
+
+        fake_bid = BlockID(
+            'd0', 'g000640000000125', '0000',
+            DriveID('idc000' 'c62d8736c7280002'), 1)
+
+        self.assertRaises(BlockNotFoundError, g.mark_delete_block_byid, fake_bid)
 
     def test_delete_block(self):
 
         g = BlockGroup(block_group_id='g000640000000123', idcs=['a', 'b', 'c'], config=_ec_config)
-        self.assertIsNone(g.get_block('0000'))
+        self.assertIsNone(g.get_block('0000', raise_error=False))
 
         g.add_block(self.foo_block)
         self.assertIsNotNone(g.get_block('0000'))
 
-        g.delete_block('0000')
-        self.assertIsNone(g.get_block('0000'))
+        self.foo_block.add_ref()
+        del_blk = g.delete_block('0000')
+        self.assertIsNotNone(g.get_block('0000', raise_error=False))
 
-        g.delete_block('0000')
-        self.assertIsNone(g.get_block('0000'))
+        del_blk = g.delete_block('0000')
+        self.assertIsNone(g.get_block('0000', raise_error=False))
+        self.assertDictEqual(self.foo_block, del_blk)
+
+        self.assertRaises(BlockNotFoundError, g.delete_block, '0000')
 
     def test_replace_block(self):
 
@@ -379,6 +427,8 @@ class TestBlockGroup(unittest.TestCase):
         base_blk = BlockDesc({
             'size': 1000,
             'range': ['0a', '0b'],
+            'ts_range': ["123", "456"],
+            'ref_num': 1,
             'is_del': 0
         })
 
@@ -420,7 +470,7 @@ class TestBlockGroup(unittest.TestCase):
         nr_data, nr_parity = bg['config']['in_idc']
         for i in range(0, nr_data + nr_parity):
             bi = BlockIndex(idc_idx, i)
-            blk = bg.get_block(bi)
+            blk = bg.get_block(bi, raise_error=False)
             if blk is None:
                 continue
 
@@ -490,6 +540,16 @@ class TestBlockGroup(unittest.TestCase):
             act_replica_blks = bg.get_replica_blocks(bid, include_me=False)
             self.assertListEqual(_replica_blks, act_replica_blks)
 
+        fake_bid = BlockID(
+            'd0', 'g000640000000125', '0000',
+            DriveID('idc000' 'c62d8736c7280002'), 1)
+
+        self.assertIsNone(bg.get_replica_blocks(fake_bid, raise_error=False))
+        self.assertRaises(
+            BlockNotFoundError, bg.get_replica_blocks, fake_bid, raise_error=True)
+        self.assertRaises(
+            BlockNotFoundError, bg.get_replica_blocks, fake_bid)
+
     def test_get_block_byid(self):
         blk_idxes = ['0000', '0001', '0002', '0003', '0008', '0012']
 
@@ -503,3 +563,186 @@ class TestBlockGroup(unittest.TestCase):
             act_blks.append(bg.get_block_byid(bid))
 
         self.assertListEqual(blks, act_blks)
+
+        fake_bid = BlockID(
+            'd0', 'g000640000000125', '0000',
+            DriveID('idc000' 'c62d8736c7280002'), 1)
+
+        self.assertIsNone(bg.get_block_byid(fake_bid, raise_error=False))
+
+        self.assertRaises(BlockNotFoundError, bg.get_block_byid, fake_bid, True)
+        self.assertRaises(BlockNotFoundError, bg.get_block_byid, fake_bid)
+
+    def test_unlink_block_byid(self):
+
+        blk_idxes = ['0000', '0001', '0002', '0003', '0008', '0012']
+
+        bg = self.make_test_block_group(blk_idxes)
+
+        blks = bg.indexes_to_blocks(blk_idxes)
+        bids = [blk['block_id'] for blk in blks]
+
+        bg.link_block_byid(bids[1])
+        self.assertEqual(blks[1]['ref_num'], 2)
+
+        del_blk = bg.delete_block_byid(bids[1])
+        self.assertIsNone(del_blk)
+
+        del_blk = bg.mark_delete_block_byid(bids[1])
+        self.assertEqual(del_blk["is_del"], 1)
+
+        del_blk = bg.delete_block_byid(bids[1])
+        self.assertDictEqual(del_blk, blks[1])
+
+        self.assertRaises(BlockNotFoundError, bg.delete_block_byid, bids[1])
+
+        blks.pop(1)
+
+        act_blks = bg.indexes_to_blocks(blk_idxes)
+        act_blks = [blk for blk in act_blks if blk is not None]
+
+        self.assertListEqual(blks, act_blks)
+
+    def test_link_block(self):
+
+        blk_idxes = ['0000', '0001', '0002', '0003', '0008', '0012']
+
+        bg = self.make_test_block_group(blk_idxes)
+        blks = bg.indexes_to_blocks(blk_idxes)
+
+        args = [blks[1], False, False]
+        self.assertRaises(BlockExists, bg.add_block, *args)
+        act_blks = bg.indexes_to_blocks(blk_idxes)
+        self.assertListEqual(blks, act_blks)
+
+        bg.link_block(blk_idxes[1])
+        self.assertEqual(blks[1]['ref_num'], 2)
+
+        bg.unlink_block(blk_idxes[1])
+        self.assertDictEqual(blks[1], bg.add_block(blks[1], allow_exist=True))
+
+        act_blks = bg.indexes_to_blocks(blk_idxes)
+        self.assertListEqual(blks, act_blks)
+
+    def test_add_block(self):
+
+        blk_idxes = ['0000', '0001', '0002', '0003', '0008', '0012']
+
+        bg = self.make_test_block_group(blk_idxes)
+        blks = bg.indexes_to_blocks(blk_idxes)
+
+        args = [blks[1], False, False]
+        self.assertRaises(BlockExists, bg.add_block, *args)
+        act_blks = bg.indexes_to_blocks(blk_idxes)
+        self.assertListEqual(blks, act_blks)
+
+        self.assertDictEqual(blks[1], bg.add_block(blks[1], allow_exist=True))
+        act_blks = bg.indexes_to_blocks(blk_idxes)
+        self.assertListEqual(blks, act_blks)
+
+    def test_get_idc_blocks(self):
+        idc0 = ['0000', '0001', '0002', '0003', '0004', '0005', '0006', '0011']
+        idc1 = ['0103', '0108', '0112']
+        idc2 = ['0200', '0201', '0202', '0203', '0204', '0205']
+
+        blk_idxes = idc0 + idc1 + idc2
+
+        bg = self.make_test_block_group(blk_idxes)
+
+        idc0_blks = bg.indexes_to_blocks(idc0)
+        act_idc0_blks = bg.get_idc_blocks(0)
+        self.assertListEqual(idc0_blks, act_idc0_blks)
+
+        idc0_blks = bg.indexes_to_blocks(['0000', '0001', '0002', '0003', '0004', '0005'])
+        act_idc0_blks = bg.get_idc_blocks_no_replica(0)
+        self.assertListEqual(idc0_blks, act_idc0_blks)
+
+        idc2_blks = bg.indexes_to_blocks(['0200', '0201', '0202', '0203', '0204', '0205'])
+        act_idc2_blks = bg.get_idc_blocks_no_replica(2)
+        self.assertListEqual(idc2_blks, act_idc2_blks)
+
+        idc1_blks = bg.indexes_to_blocks(idc1)
+        act_idc1_blks = bg.get_idc_blocks(1)
+        self.assertListEqual(idc1_blks, act_idc1_blks)
+
+        for blk in idc1:
+            bg.mark_delete_block(blk)
+        act_idc1_blks = bg.get_idc_blocks(1, is_del=False)
+        self.assertListEqual([], act_idc1_blks)
+
+        act_idc1_blks = bg.get_idc_blocks(1, is_del=True)
+        self.assertListEqual(idc1_blks, act_idc1_blks)
+
+        act_idc2_blks = bg.get_idc_blocks(3)
+        self.assertListEqual([], act_idc2_blks)
+
+    def test_get_idc_block_ids(self):
+        idc0 = ['0000', '0001', '0002', '0003', '0004', '0005', '0006', '0011']
+        idc1 = ['0103', '0108', '0112']
+        idc2 = ['0200', '0201', '0202', '0203', '0204', '0205']
+
+        blk_idxes = idc0 + idc1 + idc2
+
+        bg = self.make_test_block_group(blk_idxes)
+
+        idc0_blks = bg.indexes_to_blocks(['0000', '0001', '0002', '0003', '0004', '0005'])
+        idc0_bids = [BlockID(b['block_id']) for b in idc0_blks]
+        act_idc0_bids = bg.get_idc_block_ids_no_replica(0)
+        self.assertListEqual(idc0_bids, act_idc0_bids)
+
+        idc2_blks = bg.indexes_to_blocks(['0200', '0201', '0202', '0203', '0204', '0205'])
+        idc2_bids = [BlockID(b['block_id']) for b in idc2_blks]
+        act_idc2_bids = bg.get_idc_block_ids_no_replica(2)
+        self.assertListEqual(idc2_bids, act_idc2_bids)
+
+    def test_get_get_blocks(self):
+        idc0 = ['0000', '0001', '0002']
+        idc1 = ['0103', '0108', '0112']
+
+        blk_idxes = idc0 + idc1
+
+        bg = self.make_test_block_group(blk_idxes)
+
+        blks = bg.indexes_to_blocks(blk_idxes)
+        act_blks = bg.get_blocks()
+        self.assertListEqual(blks, act_blks)
+
+    def test_block_type(self):
+        ec_idxes = ['0000', '0001', '0004', '0005']
+        replica_idxes = ['0002', '0008', '0012']
+
+        idxes = ec_idxes + replica_idxes
+
+        bg = self.make_test_block_group(idxes)
+
+        blks = bg.indexes_to_blocks(idxes)
+
+        self.assertTrue(BlockGroup.is_data(blks[0]['block_id']))
+        self.assertTrue(BlockGroup.is_data(blks[1]['block_id']))
+        self.assertTrue(BlockGroup.is_parity(blks[2]['block_id']))
+
+        self.assertTrue(BlockGroup.is_parity(blks[3]['block_id']))
+        self.assertTrue(BlockGroup.is_data(blks[4]['block_id']))
+
+        self.assertTrue(BlockGroup.is_replica(blks[5]['block_id']))
+        self.assertTrue(BlockGroup.is_replica(blks[6]['block_id']))
+
+    def test_get_d0_idcs(self):
+        g = BlockGroup(
+            block_group_id='g000640000000123',
+            idcs=['a', 'b', 'c'],
+            config=_ec_config)
+
+        self.assertEqual(["a", "b"], g.get_d0_idcs())
+
+    def test_get_dtype_by_idc(self):
+        g = BlockGroup(
+            block_group_id='g000640000000123',
+            idcs=['a', 'b', 'c'],
+            config=_ec_config)
+
+        self.assertEqual("d0", g.get_dtype_by_idc("a"))
+        self.assertEqual("d0", g.get_dtype_by_idc("b"))
+        self.assertEqual("x0", g.get_dtype_by_idc("c"))
+
+        self.assertRaises(AssertionError, g.get_dtype_by_idc, "d")

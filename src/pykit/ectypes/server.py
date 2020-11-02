@@ -11,6 +11,9 @@ from pykit import fsutil
 from pykit import net
 from pykit import strutil
 
+from .server_status import ServerStatus
+from .drive_status import DriveStatus
+
 
 def _make_mountpoints_info():
     mps = fsutil.get_all_mountpoint()
@@ -32,13 +35,17 @@ def _make_mountpoints_info():
 
 def _get_allocated_drive(allocated_drive_pre, mountpoints):
     rst = {}
+    max_mount_idx = 0
     for m in mountpoints:
         if not m.startswith(allocated_drive_pre):
             continue
 
-        rst[m] = {'status': 'normal'}
+        rst[m] = {'status': DriveStatus.NORMAL}
+        idx = int(m.split('/')[-1])
 
-    return rst
+        max_mount_idx = max_mount_idx if max_mount_idx > idx else idx
+
+    return rst, max_mount_idx
 
 
 def make_serverrec(server_id, idc, idc_type, roles, allocated_drive_pre, **argkv):
@@ -68,8 +75,10 @@ def make_serverrec(server_id, idc, idc_type, roles, allocated_drive_pre, **argkv
 
     mps = _make_mountpoints_info()
     serverrec['mountpoints'] = mps
-    serverrec['next_mount_index'] = 1
-    serverrec['allocated_drive'] = _get_allocated_drive(allocated_drive_pre, mps)
+    allocated_drive, max_mount_idx = _get_allocated_drive(allocated_drive_pre, mps)
+    serverrec['next_mount_index'] = max_mount_idx + 1
+    serverrec['allocated_drive'] = allocated_drive
+    serverrec['status'] = ServerStatus.def_status()
     serverrec.update(argkv)
 
     return serverrec

@@ -1,6 +1,8 @@
 #!/usr/bin/env python2
 # coding: utf-8
 
+import re
+
 from collections import defaultdict
 
 from pykit.dictutil import FixedKeysDict
@@ -36,13 +38,23 @@ def _idcs(lst):
     return list(lst)
 
 
+def _blocks(blocks=None):
+    if blocks is None:
+        return {}
+
+    for idx, blk in blocks.items():
+        blocks[idx] = BlockDesc(blk)
+
+    return blocks
+
+
 class BlockGroup(FixedKeysDict):
 
     keys_default = dict(
         block_group_id=BlockGroupID,
         config=ReplicationConfig,
         idcs=_idcs,
-        blocks=dict,
+        blocks=_blocks,
     )
 
     ident_keys = ('block_group_id',)
@@ -88,25 +100,89 @@ class BlockGroup(FixedKeysDict):
 
     def mark_delete_block(self, block_index):
         block = self.get_block(block_index, raise_error=True)
-        block['is_del'] = 1
+
+        block.rm_ref()
+
+        if block.can_del():
+            block.mark_del()
+            return block
+
+        return None
+
+    def mark_delete_block_byid(self, block_id):
+        block = self.get_block_byid(block_id, raise_error=True)
+
+        block.rm_ref()
+
+        if block.can_del():
+            block.mark_del()
+            return block
+
+        return None
+
+    def unlink_block(self, block_index):
+        block = self.get_block(block_index, raise_error=True)
+
+        if not block.is_mark_del():
+            block.rm_ref()
+
+        if block.can_del():
+            del self['blocks'][str(block_index)]
+            return block
+
+        return None
+
+    def unlink_block_byid(self, block_id):
+        block = self.get_block_byid(block_id, raise_error=True)
+
+        if not block.is_mark_del():
+            block.rm_ref()
+
+        if block.can_del():
+            del self['blocks'][block_id.block_index]
+            return block
+
+        return None
 
     def delete_block(self, block_index):
-        block = self.get_block(block_index)
-        if block is not None:
-            del self['blocks'][str(block_index)]
+        return self.unlink_block(block_index)
 
-    def add_block(self, new_block, replace=False):
+    def delete_block_byid(self, block_id):
+        return self.unlink_block_byid(block_id)
 
-        desc = BlockDesc(new_block)
-        bi = desc['block_id']
+    def has(self, block):
+        bid = block['block_id']
+        bidx = bid.block_index
 
-        bidx = str(bi.block_index)
+        existent = self['blocks'].get(bidx)
+        return existent == block
+
+    def link_block(self, block_index):
+        block = self.get_block(block_index, raise_error=True)
+
+        block.add_ref()
+        return block
+
+    def link_block_byid(self, block_id):
+        block = self.get_block_byid(block_id, raise_error=True)
+
+        block.add_ref()
+        return block
+
+    def add_block(self, new_block, replace=False, allow_exist=False):
+
+        if self.has(new_block) and allow_exist:
+            return new_block
+
+        bid = new_block['block_id']
+        bidx = bid.block_index
 
         prev = self['blocks'].get(bidx)
         if not replace and prev is not None:
-            raise BlockExists('there is already a block at {bi}'.format(bi=bi))
+            raise BlockExists(
+                'there is already a block at {bid}'.format(bid=bid))
 
-        self['blocks'][bidx] = desc
+        self['blocks'][bidx] = new_block
 
         if prev is None:
             return None
@@ -135,12 +211,12 @@ class BlockGroup(FixedKeysDict):
                 if block_type is not None and typ != block_type:
                     continue
 
-                if self.get_block(bi) is None:
+                if self.get_block(bi, raise_error=False) is None:
                     free_block_index[idc].append(str(bi))
 
         return free_block_index
 
-    def get_block(self, block_index, raise_error=False):
+    def get_block(self, block_index, raise_error=True):
 
         bi = BlockIndex(block_index)
         b = self['blocks'].get(str(bi))
@@ -211,11 +287,11 @@ class BlockGroup(FixedKeysDict):
 
             bi = BlockIndex(idc_index, i)
 
-            blk = self.get_block(bi)
+            blk = self.get_block(bi, raise_error=False)
             if blk is None:
                 continue
 
-            if blk['is_del'] == 1:
+            if blk.is_mark_del():
                 mark_del.append(blk)
                 continue
 
@@ -241,7 +317,7 @@ class BlockGroup(FixedKeysDict):
         for idx in indexes:
             bi = BlockIndex(idx)
 
-            blk = self.get_block(bi)
+            blk = self.get_block(bi, raise_error=False)
             blks.append(blk)
 
         return blks
@@ -269,26 +345,36 @@ class BlockGroup(FixedKeysDict):
     def is_ec_block(self, block_id):
         block_id = BlockID(block_id)
 
-        blk = self.get_block(block_id.block_index)
+        blk = self.get_block(block_id.block_index, raise_error=False)
         if blk is None or blk['block_id'] != block_id:
             raise BlockNotFoundError(
                 'block_id:{bid}'
                 ' not found in block_group:{block_group_id}'.format(bid=block_id, **self))
 
         if block_id.type.endswith('p'):
+            blk = self.get_block(block_id.block_index, raise_error=True)
             return True
 
         r_indexes = self.get_replica_indexes(block_id.block_index)
-        r_blks = [self.get_block(x) for x in r_indexes]
+        r_blks = [self.get_block(x, raise_error=False) for x in r_indexes]
 
         return None in r_blks
+
+    def get_blocks(self):
+        blks = []
+
+        for idx in sorted(self['blocks'].keys()):
+            blk = self['blocks'][idx]
+            blks.append(blk)
+
+        return blks
 
     def get_ec_blocks(self, idc_idx):
         nr_data, nr_parity = self['config']['in_idc']
 
         blks = []
         for i in range(0, nr_data + nr_parity):
-            blk = self.get_block(BlockIndex(idc_idx, i))
+            blk = self.get_block(BlockIndex(idc_idx, i), raise_error=False)
 
             if blk is None:
                 continue
@@ -315,24 +401,106 @@ class BlockGroup(FixedKeysDict):
 
         return bids
 
-    def get_replica_blocks(self, block_id, include_me=True):
+    def get_replica_blocks(self, block_id, include_me=True, raise_error=True):
         block_id = BlockID(block_id)
-        r_indexes = self.get_replica_indexes(block_id.block_index, include_me)
+        r_indexes = self.get_replica_indexes(block_id.block_index, True)
+
+        is_exist = False
 
         blks = []
         for idx in r_indexes:
-            blk = self.get_block(idx)
+            blk = self.get_block(idx, raise_error=False)
 
-            if blk is not None:
-                blks.append(blk)
+            if blk is None:
+                continue
+
+            if blk['block_id'] == block_id:
+                is_exist = True
+
+                if not include_me:
+                    continue
+
+            blks.append(blk)
+
+        if not is_exist:
+            if raise_error:
+                raise BlockNotFoundError(self['block_group_id'], block_id)
+            else:
+                return None
 
         return blks
 
-    def get_block_byid(self, block_id):
+    def get_block_byid(self, block_id, raise_error=True):
         block_id = BlockID(block_id)
 
-        blk = self.get_block(block_id.block_index)
+        blk = self.get_block(block_id.block_index, raise_error=False)
         if blk is None or blk['block_id'] != block_id:
-            return None
+            if raise_error:
+                raise BlockNotFoundError(self['block_group_id'], block_id)
+            else:
+                return None
 
         return blk
+
+    def get_idc_blocks(self, idc_idx, is_del=None, types=None):
+        blks = []
+
+        for idx in sorted(self['blocks'].keys()):
+            blk = self['blocks'][idx]
+
+            idx = BlockIndex(idx)
+            typ = self.get_block_type(idx)
+
+            if types is not None and typ not in types:
+                continue
+
+            if idx.i != idc_idx:
+                continue
+
+            if is_del is not None and blk['is_del'] != is_del:
+                continue
+
+            blks.append(blk)
+
+        return blks
+
+    def get_idc_blocks_no_replica(self, idc_idx, is_del=None):
+        types = ['d0', 'dp', 'x0', 'xp']
+        return self.get_idc_blocks(idc_idx, is_del=is_del, types=types)
+
+    def get_d0_idcs(self):
+        cross_idc = self["config"]["cross_idc"]
+        return self["idcs"][:cross_idc[0]]
+
+    def get_dtype_by_idc(self, idc):
+        cfg = self["config"]
+
+        assert idc in self["idcs"]
+        assert sum(cfg["cross_idc"]) == len(self["idcs"])
+
+        d0_idcs = self["idcs"][:cfg["cross_idc"][0]]
+
+        if idc in d0_idcs:
+            return "d0"
+        else:
+            return "x0"
+
+    def get_idc_block_ids(self, idc_idx, is_del=None, types=None):
+        blks = self.get_idc_blocks(idc_idx, is_del=is_del, types=types)
+        return [BlockID(b['block_id']) for b in blks]
+
+    def get_idc_block_ids_no_replica(self, idc_idx, is_del=None):
+        types = ['d0', 'dp', 'x0', 'xp']
+        return self.get_idc_block_ids(idc_idx, is_del=is_del, types=types)
+
+    @classmethod
+    def is_data(cls, block_id):
+        return block_id.type in ('d0', 'x0')
+
+    @classmethod
+    def is_replica(cls, block_id):
+        return re.match(r'd[1-9]', block_id.type) is not None
+
+    @classmethod
+    def is_parity(cls, block_id):
+        return block_id.type in ('dp', 'xp')

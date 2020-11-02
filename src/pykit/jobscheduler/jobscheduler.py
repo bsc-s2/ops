@@ -41,6 +41,9 @@ def get_time_info(ts=None, tz=None):
     if tz is None:
         tz = tzlocal.get_localzone()
 
+    if isinstance(tz, str):
+        tz = pytz.timezone(tz)
+
     dt = datetime.datetime.fromtimestamp(ts, tz)
 
     time_info = {

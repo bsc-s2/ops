@@ -61,6 +61,15 @@ class TestWsjobd(unittest.TestCase):
     def get_random_ident(self):
         return 'random_ident_%d' % random.randint(10000, 99999)
 
+    def _wait_for_result(self, ws):
+        # wait for test_job_echo.run to fillin resp['result']
+        for _ in range(3):
+            resp = utfjson.load(ws.recv())
+            if 'result' in resp:
+                break
+            time.sleep(0.1)
+        return resp
+
     def test_invalid_jobdesc(self):
         cases = (
             ('foo', 'not json'),
@@ -89,7 +98,7 @@ class TestWsjobd(unittest.TestCase):
 
         self.ws.send(utfjson.dump(job_desc))
 
-        resp = utfjson.load(self.ws.recv())
+        resp = self._wait_for_result(self.ws)
         dd(resp)
         self.assertEqual('foo', resp['result'], 'test get result')
 
@@ -118,12 +127,12 @@ class TestWsjobd(unittest.TestCase):
         # tolerate 0.1 second of difference
         self.assertLess(diff, 0.1)
 
-    def test_progress_key(self):
+    def test_invalid_progress_key(self):
         job_desc = {
             'func': 'test_job_progress_key.run',
             'ident': self.get_random_ident(),
             'progress': {
-                'key': 'foo',
+                'key': 'inexistent',
             },
             'report_system_load': True,
             'jobs_dir': 'pykit/wsjobd/test/test_jobs',
@@ -132,9 +141,31 @@ class TestWsjobd(unittest.TestCase):
         self.ws.send(utfjson.dump(job_desc))
 
         resp = self.ws.recv()
-        dd(resp)
+        dd(repr(resp))
         resp = utfjson.load(resp)
-        self.assertEqual('80%', resp)
+        self.assertIsNone(resp)
+
+    def test_progress_key(self):
+        job_desc = {
+            'func': 'test_job_progress_key.run',
+            'ident': self.get_random_ident(),
+            'progress': {
+                'key': 'foo',
+            },
+            # progress_sender may try to read data["foo"] before job starts.
+            # need to preset a value.
+            "foo": "0%",
+            'report_system_load': True,
+            'jobs_dir': 'pykit/wsjobd/test/test_jobs',
+        }
+
+        self.ws.send(utfjson.dump(job_desc))
+
+        resp = self.ws.recv()
+        dd(repr(resp))
+        resp = utfjson.load(resp)
+        # progress may be set by job runner or job desc
+        self.assertIn(resp, ('80%', '0%'))
 
     def test_check_system_load(self):
         job_desc = {
@@ -279,7 +310,7 @@ class TestWsjobd(unittest.TestCase):
 
         self.ws.send(utfjson.dump(job_desc))
 
-        resp = utfjson.load(self.ws.recv())
+        resp = self._wait_for_result(self.ws)
         self.assertEqual('foo', resp['result'])
 
         time.sleep(0.2)
@@ -294,7 +325,7 @@ class TestWsjobd(unittest.TestCase):
         ws2 = self._create_client()
         ws2.send(utfjson.dump(job_desc))
 
-        resp = utfjson.load(ws2.recv())
+        resp = self._wait_for_result(ws2)
         ws2.close()
         # old job with the same ident has exit, it will create a new one
         self.assertEqual('bar', resp['result'])

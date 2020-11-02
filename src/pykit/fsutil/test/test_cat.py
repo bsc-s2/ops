@@ -69,7 +69,7 @@ class TestCat(unittest.TestCase):
         n = 128
 
         def _append():
-            for i in range(n):
+            for _ in range(n):
                 time.sleep(0.001)
                 append_bytes(self.fn, 'a' * 2048)
                 time.sleep(0.001)
@@ -173,7 +173,7 @@ class TestCat(unittest.TestCase):
                 force_remove(self.fn)
                 append_lines(self.fn, [l])
                 dd('overrided: ', l)
-                time.sleep(0.5)
+                time.sleep(0.6)
 
         th = threadutil.start_daemon(_override)
 
@@ -186,6 +186,42 @@ class TestCat(unittest.TestCase):
         th.join()
 
         self.assertEqual(expected, rst)
+
+    def test_file_change_lost_if_too_frequently(self):
+        # The minimal reopen interval to detect file change
+        # is 0.5 sec, defined in fsutil/cat.py: file_check_time_range.
+        # Thus the sleep must be `>=` 0.5 or there might be chance a
+        # file change gets lost.
+        #
+        # Thus we need a case to expose this issue.
+        # 2020 Jan 05 by xp
+
+        expected = [
+            'a' * 32,
+            'b' * 32,
+            'c' * 32,
+            'd' * 32,
+        ]
+        rst = []
+
+        def _override():
+            for l in expected:
+                force_remove(self.fn)
+                append_lines(self.fn, [l])
+                dd('overrided: ', l)
+                time.sleep(0.3)
+
+        th = threadutil.start_daemon(_override)
+
+        try:
+            for l in fsutil.Cat(self.fn, strip=True).iterate(timeout=2):
+                rst.append(l)
+        except fsutil.NoData:
+            pass
+
+        th.join()
+
+        self.assertNotEqual(expected, rst)
 
     def test_wait_for_file(self):
 
@@ -231,7 +267,7 @@ class TestCat(unittest.TestCase):
             for l in fsutil.Cat(self.fn, strip=True).iterate(timeout=0.1):
                 rst.append(l)
 
-            self.failed('expect NoSuchFile to raise')
+            self.fail('expect NoSuchFile to raise')
         except fsutil.NoSuchFile:
             pass
 
@@ -261,7 +297,7 @@ class TestCat(unittest.TestCase):
             for l in fsutil.Cat(self.fn, strip=True).iterate(timeout=0.3):
                 rst.append(l)
 
-            self.failed('expect NoData to raise')
+            self.fail('expect NoData to raise')
         except fsutil.NoData:
             pass
 
@@ -290,7 +326,7 @@ class TestCat(unittest.TestCase):
             for l in fsutil.Cat(self.fn, strip=True).iterate(timeout=0.1):
                 rst.append(l)
 
-            self.failed('expect NoData to raise')
+            self.fail('expect NoData to raise')
         except fsutil.NoData:
             pass
 
