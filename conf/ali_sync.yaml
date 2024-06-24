@@ -28,6 +28,12 @@ CHECK_EXIST: true
 # 设置当文件已存在时，是否强制覆盖文件，如果否，则当文件大小或文件类型不一致时才会覆盖
 FORCE_OVERRIDE: false
 
+# 设置同步的并发线程数
+THREADS_NUM_FOR_SYNC: 3
+
+# 限制每个线程同步数据的速率为1Mb/s=1048576B/s，单位：B/s
+SYNC_SPEED: 1048576
+
 # 设置多少个线程同时添加离线任务
 THREADS_NUM_FOR_ADD_OFFLINE_TASK: 20
 
